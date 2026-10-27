@@ -1,0 +1,22 @@
+name: Build student bundle
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dist/
+        run: python3 build/build.py
+      - name: Publish to the dist branch
+        run: |
+          cd dist
+          git init -q
+          git checkout -q -b dist
+          git add -A
+          git -c user.name="studica-bot" -c user.email="bot@users.noreply.github.com" commit -q -m "build $(cat version.json)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dist

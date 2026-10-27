@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot Settings</title>
+<!--
+  SC2026 Skill 23 - robot settings and bring-up.
+
+  Everything a team tunes (wiring, motor directions, wheel size, lift and pusher angles,
+  insert distances, colour ranges) is edited HERE and saved on the robot in
+  settings.cfg. No C++ editing, no copying, no recompiling.
+
+    GET /settings          list of every setting with limits and help text
+    GET /set?key=&value=   change one (saved immediately)
+    GET /reset?key=|all    back to default
+    GET /restart           restart the robot program (run.sh brings it back)
+    GET /do?cmd=&arg=      the bring-up tests (spin_wheel, spin_lift, ...)
+
+  "instant" settings apply as soon as you save. "restart" settings (wiring)
+  are read once when the hardware starts, so the page offers a restart button.
+
+  SELF-CONTAINED. No CDN - no internet needed on site.
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#14171c; --muted:#5b6472; --line:#dde1e8;
+  --accent:#1f6feb; --ok:#127a3e; --warn:#a15c00; --err:#c0281c;
+  --okbg:#e7f5ec; --warnbg:#fdf3e2; --errbg:#fdeceb; --chip:#eef1f6;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+    --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+    --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+  --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+  --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;
+  background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
+h1{font-size:16px;margin:0;font-weight:650}
+h1 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.grow{flex:1}
+button,input,textarea{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{border-color:var(--err);color:var(--err)}
+input[type=text],input[type=number],textarea{background:var(--panel);border:1px solid var(--line);
+  border-radius:6px;padding:5px 8px;min-width:0}
+.conn{font-size:11px;padding:3px 9px;border-radius:20px;background:var(--chip);color:var(--muted)}
+.conn.on{background:var(--okbg);color:var(--ok)}
+.conn.err{background:var(--errbg);color:var(--err)}
+main{max-width:940px;margin:0 auto;padding:18px 16px 70px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 4px}
+.card > p{color:var(--muted);margin:4px 0 10px;font-size:13px}
+.banner{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:10px 14px;margin-bottom:14px;
+  display:none;align-items:center;gap:12px;flex-wrap:wrap}
+.banner.show{display:flex}
+.banner b{color:var(--ink)}
+.acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.result{font-size:11.5px;font-family:var(--mono);color:var(--muted);margin-top:8px;min-height:15px}
+.result.bad{color:var(--err)} .result.good{color:var(--ok)}
+.live{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:8px 0 4px}
+.live div{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.live small{display:block;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+.live b{font-family:var(--mono);font-size:15px}
+.grp{margin-top:18px}
+.grp h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px}
+.row{display:grid;grid-template-columns:minmax(150px,1.2fr) 150px minmax(0,2fr);gap:10px;align-items:center;
+  padding:8px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:none}
+.row .name{font-weight:600}
+.row .name small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+.row .ctl{display:flex;align-items:center;gap:6px}
+.row .ctl input[type=number]{width:92px;text-align:right;font-family:var(--mono)}
+.row .ctl input[type=checkbox]{width:20px;height:20px}
+.row .unit{color:var(--muted);font-size:11px}
+.row .help{color:var(--muted);font-size:12px}
+.row .help .msg{display:block;font-family:var(--mono);font-size:11px;margin-top:2px}
+.row .help .msg.good{color:var(--ok)} .row .help .msg.bad{color:var(--err)}
+.tag{font-size:10px;padding:1px 7px;border-radius:10px;background:var(--chip);color:var(--muted);margin-left:6px;font-weight:500}
+.tag.restart{background:var(--warnbg);color:var(--warn)}
+.tag.changed{background:var(--okbg);color:var(--ok)}
+.reset{padding:2px 8px;font-size:11px}
+.helper{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:8px}
+.helper label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.helper input{width:120px;font-family:var(--mono)}
+textarea{width:100%;min-height:90px;font-family:var(--mono);font-size:12px}
+@media (max-width:640px){ .row{grid-template-columns:1fr} }
+a{color:var(--accent)}
+</style>
+
+<style id="hubnav-css">#hubnav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:5px 12px;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--chip,#eef1f6);border-bottom:1px solid var(--line,#dde1e8)}#hubnav a{color:var(--muted,#5b6472);text-decoration:none;padding:2px 9px;border-radius:6px}#hubnav a:hover{background:var(--panel,#fff);color:var(--ink,#14171c)}#hubnav a.here{background:var(--accent,#1f6feb);color:#fff}#hubnav b{margin-right:6px;color:var(--ink,#14171c);font-weight:650}</style>
+<script id="hubnav-head">
+/* ONE robot address for every page. Typed on any page, it is saved here and
+   every other page opens with it (added to the address bar as ?host=&port=). */
+(function(){try{
+  var q=new URLSearchParams(location.search), K="studica.robot";
+  var r=JSON.parse(localStorage.getItem(K)||"null");
+  if(q.get("host")){ localStorage.setItem(K,JSON.stringify({host:q.get("host"),port:q.get("port")||"5800"})); }
+  else if(r&&r.host){ q.set("host",r.host); q.set("port",r.port||"5800");
+    location.replace(location.pathname+"?"+q.toString()+location.hash); }
+}catch(e){}})();
+</script>
+<style id="sidenav-css">body{padding-left:210px}#sidenav{position:fixed;left:0;top:0;bottom:0;width:210px;background:#fff;border-right:1px solid #dde3ea;padding:0 10px 12px;display:flex;flex-direction:column;gap:6px;z-index:40;font:18px/1.4 "Segoe UI",system-ui,Arial,sans-serif}#sidenav .sn-title{background:#123a7a;color:#fff;margin:0 -10px 10px;height:56px;display:flex;align-items:center;padding:0 18px;font-size:21px;font-weight:700}#sidenav a{padding:14px;border-radius:12px;color:#14171c;text-decoration:none;font-weight:700}#sidenav a:hover{background:#f1f4f8}#sidenav a.here{background:#1f6feb;color:#fff}</style>
+</head>
+<body>
+<nav id="sidenav"><div class="sn-title">🤖 Robot</div><a href="../START HERE.html#connect">🔗 Connect</a><a href="../START HERE.html#test">🧪 Test</a><a href="../START HERE.html#settings" class="here">⚙️ Settings</a><a href="../START HERE.html#m2">🏁 Competition</a></nav>
+
+<header>
+  <h1>Robot Settings <small>change numbers here, no code editing</small></h1>
+  <span class="grow"></span>
+  <label style="font-size:12px;color:var(--muted)">Robot
+    <input type="text" id="host" value="10.12.34.2" style="width:106px"></label>
+  <input type="text" id="port" value="5800" style="width:52px">
+  <button id="connectBtn" class="primary">Connect</button>
+  <span class="conn" id="conn">not connected</span>
+</header>
+
+<main>
+  <div class="banner" id="disBanner" style="background:var(--errbg);color:var(--err)">
+    <span><b>Robot is DISABLED</b> - motors and servos will not move, so the test buttons do nothing.</span>
+    <button class="primary" id="enableBtn">Enable robot</button>
+  </div>
+  <div class="banner" id="clashBanner" style="background:var(--errbg);color:var(--err)"></div>
+  <div class="banner" id="restartBanner">
+    <span><b>Restart needed.</b> You changed a wiring setting. It only takes effect when the robot program restarts.</span>
+    <button class="primary" id="restartBtn2">Restart robot program</button>
+  </div>
+
+  <div class="card" id="testCard">
+    <h2>1. Check the robot</h2>
+    <p><b>Put the robot on blocks, wheels off the ground.</b> These buttons move the real robot. Live readings update every second.</p>
+    <div class="live">
+      <div><small>Lift (commanded)</small><b id="lv_lift">-</b></div>
+      <div><small>Heading (yaw)</small><b id="lv_yaw">-</b></div>
+      <div><small>Position x</small><b id="lv_x">-</b></div>
+      <div><small>Position y</small><b id="lv_y">-</b></div>
+      <div><small>Start button</small><b id="lv_start">-</b></div>
+      <div><small>Stop button</small><b id="lv_stop">-</b></div>
+      <div><small>Reset button</small><b id="lv_reset">-</b></div>
+      <div><small>Encoder FL</small><b id="lv_e0">-</b></div>
+      <div><small>Encoder FR</small><b id="lv_e1">-</b></div>
+      <div><small>Encoder RL</small><b id="lv_e2">-</b></div>
+      <div><small>Encoder RR</small><b id="lv_e3">-</b></div>
+      <div><small>Ultrasonic</small><b id="lv_us">-</b></div>
+      <div><small>Sharp IR</small><b id="lv_ir">-</b></div>
+      <div><small>Cobra 0 1 2 3 (V)</small><b id="lv_cobra">-</b></div>
+      <div><small>Lift TOP switch</small><b id="lv_ltop">-</b></div>
+      <div><small>Lift BOTTOM switch</small><b id="lv_lbot">-</b></div>
+    </div>
+    <p style="margin-top:10px"><b>Which wheel is which?</b> Each button spins ONE wheel forward for 1 second at low power. Watch the real wheel. It should be the wheel named on the button and it should turn so the robot would go <i>forward</i>.</p>
+    <div class="acts" id="wheelBtns"></div>
+    <p style="margin-top:10px"><b>Whole robot</b> - after all four wheels spin the right way, each button drives the robot for 0.7 s at low power. Check it goes the way the button says.</p>
+    <div class="acts" id="driveBtns"></div>
+    <p style="margin-top:10px"><b>Lift and pusher</b></p>
+    <div class="acts" id="otherBtns"></div>
+    <div class="result" id="testResult"></div>
+    <p style="margin-top:8px;font-size:12px">
+      <b>Encoder check:</b> each Spin should make <i>that</i> wheel's encoder go <b>UP</b> by roughly 100-200 mm. Goes down? Tick that wheel's <b>encoder reversed</b> box (Motor directions). Doesn't change at all? That encoder cable is unplugged or on the wrong Titan port. Driving by distance only works once all four go up.<br>
+      Wrong wheel moves? Change that wheel's <b>motor port</b> in the Wiring section below.
+      Right wheel but spins backwards? Tick its <b>reversed</b> box in Motor directions.
+      Both are saved as you go.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Which pin is which? (servos, buttons, LEDs)</h2>
+    <p>Everywhere on these pages you type the <b>pin number printed on the VMX</b> next to the plug: FlexDIO <b>0-11</b>, HiCurrDIO <b>12-21</b>, Analog <b>0-3</b>. The robot converts it for you. Each printed pin can be used only once.</p>
+    <p style="font-size:12px;color:var(--muted)">HiCurrDIO 12-21 with its jumper removed: buttons and switches only. Servos and LEDs there need the jumper fitted - otherwise put them on FlexDIO 0-11.</p>
+    <div class="live" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <div><small>Lift servo pin</small><b id="sv_lift">-</b></div>
+      <div><small>Pusher servo pin</small><b id="sv_push">-</b></div>
+    </div>
+    <p style="margin-top:12px"><b>Servo finder.</b> Not sure which pin a servo is on? Type the printed pin, press <b>Try</b>, and watch which servo moves. Then type that pin into Wiring (<i>Lift servo pin</i> / <i>Pusher servo pin</i>) and press Restart. With a separate servo power block, its ground must be connected to the VMX ground or the servo ignores the signal.</p>
+    <div class="helper">
+      <label>Printed pin (0-21)<input type="number" id="sf_ch" value="0" min="0" max="21"></label>
+      <label>Angle (0-180)<input type="number" id="sf_deg" value="90" min="0" max="180"></label>
+      <button id="sf_try" class="primary">Try</button>
+      <button id="sf_0">0&deg;</button><button id="sf_90">90&deg;</button><button id="sf_180">180&deg;</button>
+    </div>
+    <div class="result" id="sf_res"></div>
+  </div>
+
+  <div class="card">
+    <h2>Robot log</h2>
+    <p>What the robot did and why: every command, its result, button presses, stop button, settings changes. Newest at the bottom. Also saved on the robot in <code>~/robot-onboard/logs/events.log</code> (and the full terminal output in <code>logs/terminal.log</code>).</p>
+    <div class="acts" style="margin-top:0">
+      <button id="logCopy">Copy log</button>
+      <button id="logSave">Download log</button>
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox" id="logAuto" checked> auto-refresh</label>
+    </div>
+    <pre id="logBox" style="margin-top:8px;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px;font-family:var(--mono);font-size:11.5px;white-space:pre-wrap">(connect to see the log)</pre>
+  </div>
+
+  <div class="card">
+    <h2>2. Calibration helpers</h2>
+    <p>Drive, measure with a tape, type what you measured, and the page works out the new setting for you.</p>
+    <div><b>Wheel size.</b> Drive forward a known distance, then measure how far it really went.</div>
+    <div class="helper">
+      <label>Commanded (mm)<input type="number" id="wr_cmd" value="1000"></label>
+      <label>Measured (mm)<input type="number" id="wr_meas" placeholder="e.g. 940"></label>
+      <button id="wr_drive">Drive it</button>
+      <button id="wr_apply" class="primary">Apply new wheel radius</button>
+    </div>
+    <div class="result" id="wr_res"></div>
+    <div style="margin-top:14px"><b>Lift with a CONTINUOUS servo</b> (spins all the way; tick <i>Lift servo is in CONTINUOUS mode</i> under Lift). Needs both lift switches working (see the live readout). Steps:
+      <ol style="margin:4px 0 0 18px;padding:0;font-size:13px">
+        <li>Measure how far the fork travels from the bottom switch to the top switch and type it in <b>Rail travel between the switches</b> (Lift settings).</li>
+        <li>Press <b>Find bottom</b>: the lift drives down until the bottom switch clicks. If it goes UP instead, swap <i>Spin-up</i> and <i>Spin-down command</i>.</li>
+        <li>Press <b>Calibrate lift</b>: it times bottom &rarr; top &rarr; bottom and saves the up/down speeds by itself.</li>
+        <li>Try the height buttons below; adjust the heights in Pick and place / Lift if needed.</li>
+      </ol>
+    </div>
+    <div class="acts" id="liftCont"></div>
+    <div class="result" id="lc_res"></div>
+    <div style="margin-top:10px"><b>No switches (or only one)?</b> Untick the missing switch under Lift settings, then calibrate with a ruler:
+      <ol style="margin:4px 0 0 18px;padding:0;font-size:13px">
+        <li>Press <b>Find bottom</b> (without a bottom switch it runs down for <i>Time to reach the bottom</i>).</li>
+        <li>Press <b>Run UP</b>, then measure the fork height from the floor and type it in. Press <b>Save up speed</b>.</li>
+        <li>Press <b>Run DOWN</b>, measure again, type it in. Press <b>Save down speed</b>.</li>
+        <li>Press <b>Find bottom</b> once more before using the height buttons.</li>
+      </ol>
+    </div>
+    <div class="helper">
+      <label>Run time (s)<input type="number" id="rc_t" value="2" step="0.1"></label>
+      <button id="rc_up">Run UP</button>
+      <label>Height after UP (mm)<input type="number" id="rc_h1" placeholder="e.g. 110"></label>
+      <button id="rc_saveup" class="primary">Save up speed</button>
+    </div>
+    <div class="helper">
+      <button id="rc_down">Run DOWN</button>
+      <label>Height after DOWN (mm)<input type="number" id="rc_h2" placeholder="e.g. 60"></label>
+      <button id="rc_savedown" class="primary">Save down speed</button>
+    </div>
+    <div class="result" id="rc_res"></div>
+    <div style="margin-top:14px"><b>Lift (servo) calibration.</b> Type a servo angle, press <b>Try angle</b>, and watch the fork. Find the angle where the fork is at its lowest and its highest, measure each height from the floor to the fork top, then save.</div>
+    <div class="helper">
+      <label>Servo angle (0-180)<input type="number" id="lf_ang" value="90"></label>
+      <button id="lf_try">Try angle</button>
+    </div>
+    <div class="helper">
+      <label>Lowest: angle<input type="number" id="lf_a0" placeholder="e.g. 10"></label>
+      <label>Lowest: height (mm)<input type="number" id="lf_h0" placeholder="e.g. 30"></label>
+      <label>Highest: angle<input type="number" id="lf_a1" placeholder="e.g. 170"></label>
+      <label>Highest: height (mm)<input type="number" id="lf_h1" placeholder="e.g. 140"></label>
+      <button id="lf_apply" class="primary">Save lift calibration</button>
+    </div>
+    <div class="result" id="lf_res"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. All settings</h2>
+    <p>Change a value, then press Enter or click away. It is checked, saved on the robot, and applied. <span class="tag">instant</span> applies at once, <span class="tag restart">restart</span> needs the robot program to restart.</p>
+    <div class="acts" style="margin-top:0">
+      <input type="text" id="filter" placeholder="Search settings..." style="flex:1;min-width:180px">
+      <button id="showChanged">Only changed</button>
+    </div>
+    <div id="groups"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. Share and back up</h2>
+    <p>Copy your changed settings to keep them or give them to another team (the file is also saved on the robot as <code>settings.cfg</code>). Paste settings here to apply many at once.</p>
+    <div class="acts" style="margin-top:0">
+      <button id="copyBtn">Copy my settings</button>
+      <button id="applyBtn">Apply pasted settings</button>
+      <button id="restartBtn" class="primary">Restart robot program</button>
+      <button id="resetAll" class="danger">Reset everything to defaults</button>
+    </div>
+    <textarea id="paste" placeholder="WHEEL_RADIUS=49.5&#10;INVERT_FL=1" style="margin-top:10px"></textarea>
+    <div class="result" id="shareRes"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = "studica.settings.v1";
+let all = [];            // settings from the robot
+let onlyChanged = false;
+let timer = null;
+
+function base(){ return "http://" + $("host").value.trim() + ":" + $("port").value.trim(); }
+
+function saveLocal(){ try{ localStorage.setItem(KEY, JSON.stringify({host:$("host").value, port:$("port").value})); }catch(e){} }
+function loadLocal(){
+  try{ const r = localStorage.getItem(KEY); if(r){ const s = JSON.parse(r);
+    if(s.host) $("host").value = s.host; if(s.port) $("port").value = s.port; } }catch(e){}
+  const p = new URLSearchParams(location.search);
+  if(p.get("host")) $("host").value = p.get("host");
+  if(p.get("port")) $("port").value = p.get("port");
+}
+
+async function call(route, ms){
+  const r = await fetch(base() + route, {cache:"no-store", signal: AbortSignal.timeout(ms || 4000)});
+  return await r.json();
+}
+
+function setConn(ok, text){
+  const el = $("conn");
+  el.textContent = text || (ok ? "connected" : "not reachable");
+  el.className = "conn " + (ok ? "on" : "err");
+}
+
+// ------------------------------------------------------------- live readout
+async function poll(){
+  try{
+    const s = await call("/state", 2500);
+    setConn(true);
+    $("lv_lift").textContent  = s.lift.toFixed(1) + " mm";
+    if(Array.isArray(s.servo_ok)){
+      const ch = k => { const v = valueOf(k); return v == null ? "?" : v; };
+      $("sv_lift").textContent = "pin " + ch("LIFT_SERVO_PIN") + (s.servo_ok[0] ? "  OK" : "  REJECTED");
+      $("sv_push").textContent = "pin " + ch("SERVO_PIN") + (s.servo_ok[1] ? "  OK" : "  REJECTED");
+      $("sv_lift").style.color = s.servo_ok[0] ? "var(--ok)" : "var(--err)";
+      $("sv_push").style.color = s.servo_ok[1] ? "var(--ok)" : "var(--err)";
+    }
+    if("us_mm" in s){
+      const mm = v => v < 0 ? "off" : v.toFixed(0) + " mm";
+      $("lv_us").textContent = mm(s.us_mm);
+      $("lv_ir").textContent = mm(s.ir_mm);
+      $("lv_cobra").textContent = s.cobra[0] < 0 ? "off" : s.cobra.map((v,i) => (s.line & (1<<i) ? "[" : "") + v.toFixed(1) + (s.line & (1<<i) ? "]" : "")).join(" ");
+    }
+    if(Array.isArray(s.enc)) s.enc.forEach((v,i) => { $("lv_e"+i).textContent = v.toFixed(0) + " mm"; });
+    if("lift_top" in s){ $("lv_ltop").textContent = s.lift_top ? "PRESSED" : "free"; $("lv_lbot").textContent = s.lift_bottom ? "PRESSED" : "free"; }
+    if("enabled" in s) $("disBanner").classList.toggle("show", !s.enabled);
+    $("lv_yaw").textContent   = s.yaw.toFixed(1) + " deg";
+    $("lv_x").textContent     = s.x.toFixed(0) + " mm";
+    $("lv_y").textContent     = s.y.toFixed(0) + " mm";
+    $("lv_start").textContent = (s.start_btn ? "PRESSED" : "not pressed") + ("raw_start" in s ? "  (pin " + s.raw_start + ")" : "");
+    $("lv_stop").textContent  = (s.stop_btn ? "not pressed" : "PRESSED") + ("raw_stop" in s ? "  (pin " + s.raw_stop + ")" : "");
+    if($("lv_reset")) $("lv_reset").textContent = !("raw_reset" in s) ? "-" : s.raw_reset < 0 ? "not fitted" : (s.reset_btn ? "PRESSED" : "not pressed") + "  (pin " + s.raw_reset + ")";
+    return s;
+  }catch(e){
+    setConn(false);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- commands
+async function doCmd(cmd, arg, resEl){
+  resEl = resEl || $("testResult");
+  resEl.textContent = "sending..."; resEl.className = "result";
+  try{
+    const s = await call("/do?cmd=" + encodeURIComponent(cmd) + "&arg=" + encodeURIComponent(arg == null ? 0 : arg));
+    resEl.textContent = s.ok ? ("sent: " + cmd + (arg != null ? " " + arg : "")) : ("robot said: " + s.result);
+    resEl.className = "result " + (s.ok ? "good" : "bad");
+    return s.ok;
+  }catch(e){
+    resEl.textContent = "could not reach the robot - check Wi-Fi and that the robot program is running";
+    resEl.className = "result bad";
+    return false;
+  }
+}
+
+function btn(label, fn, cls){
+  const b = document.createElement("button");
+  b.textContent = label; if(cls) b.className = cls; b.onclick = fn; return b;
+}
+
+function buildTests(){
+  const names = ["Front-left","Front-right","Rear-left","Rear-right"];
+  const w = $("wheelBtns"); w.innerHTML = "";
+  names.forEach((n, i) => w.append(btn("Spin " + n, () => doCmd("spin_wheel", i))));
+  const o = $("otherBtns"); o.innerHTML = "";
+  o.append(btn("Lift up 10 mm", () => doCmd("spin_lift", 1)));
+  o.append(btn("Lift down 10 mm", () => doCmd("spin_lift", -1)));
+  o.append(btn("Pusher: push", () => doCmd("push")));
+  o.append(btn("Pusher: retract", () => doCmd("retract")));
+  o.append(btn("Drive forward 300 mm", () => doCmd("forward", 300)));
+  o.append(btn("STOP", async () => { try{ await call("/abort"); $("testResult").textContent = "stopped"; }catch(e){} }, "danger"));
+}
+
+// ----------------------------------------------------------------- settings
+function valueOf(key){ const s = all.find(x => x.key === key); return s ? s.value : null; }
+
+function fmt(v){ return String(Math.round(v * 1e6) / 1e6); }
+
+// Two devices on ONE physical pin = garbage signals (an LED on a servo's pin
+// makes the servo move). DIO channels are the pin numbers on the board;
+// every pin here is the number printed on the VMX.
+function checkClashes(){
+  const DIO = {START_BUTTON:"Start button", STOP_BUTTON:"Stop button", RESET_BUTTON:"Reset button", RUNNING_LED:"Green LED", STOPPED_LED:"Red LED",
+               LIFT_TOP_SWITCH:"Lift TOP switch", LIFT_BOTTOM_SWITCH:"Lift BOTTOM switch"};
+  const PWM = {SERVO_PIN:"Pusher servo", LIFT_SERVO_PIN:"Lift servo"};
+  const used = {};
+  const add = (pin, who) => { (used[pin] = used[pin] || []).push(who); };
+  Object.keys(DIO).forEach(k => { const v = valueOf(k); if(v != null && v >= 0) add(v, DIO[k] + " (DIO " + v + ")"); });
+  Object.keys(PWM).forEach(k => { const v = valueOf(k); if(v != null) add(v, PWM[k] + " (pin " + v + ")"); });
+  const clashes = Object.keys(used).filter(p => used[p].length > 1)
+    .map(p => "board pin " + (p < 12 ? "FlexDIO " + p : "HiCurrDIO " + (p - 12)) + ": " + used[p].join(" + "));
+  const b = $("clashBanner");
+  b.innerHTML = clashes.length ? "<b>Two devices on the same pin</b> - they will interfere (e.g. a servo moving by itself). Give each its own pin in Wiring, then Restart:<br>" + clashes.join("<br>") : "";
+  b.classList.toggle("show", clashes.length > 0);
+}
+
+function render(){
+  checkClashes();
+  const q = $("filter").value.trim().toLowerCase();
+  const groups = {};
+  all.forEach(s => {
+    const changed = s.value !== s.default;
+    if(onlyChanged && !changed) return;
+    if(q && !(s.label + " " + s.key + " " + s.help + " " + s.group).toLowerCase().includes(q)) return;
+    (groups[s.group] = groups[s.group] || []).push(s);
+  });
+  const host = $("groups"); host.innerHTML = "";
+  const keys = Object.keys(groups);
+  if(!keys.length){ host.innerHTML = "<p style='color:var(--muted)'>Nothing to show.</p>"; return; }
+  keys.forEach(g => {
+    const wrap = document.createElement("div"); wrap.className = "grp";
+    const h = document.createElement("h3"); h.textContent = g; wrap.append(h);
+    groups[g].forEach(s => wrap.append(row(s)));
+    host.append(wrap);
+  });
+}
+
+function row(s){
+  const r = document.createElement("div"); r.className = "row"; r.dataset.key = s.key;
+  const changed = s.value !== s.default;
+
+  const name = document.createElement("div"); name.className = "name";
+  name.innerHTML = "";
+  name.append(document.createTextNode(s.label));
+  const tag = document.createElement("span");
+  tag.className = "tag" + (s.live ? "" : " restart"); tag.textContent = s.live ? "instant" : "restart";
+  name.append(tag);
+  if(changed){ const c = document.createElement("span"); c.className = "tag changed"; c.textContent = "changed"; name.append(c); }
+  const sm = document.createElement("small"); sm.textContent = s.key; name.append(sm);
+
+  const ctl = document.createElement("div"); ctl.className = "ctl";
+  let input;
+  if(s.type === "bool"){
+    input = document.createElement("input"); input.type = "checkbox"; input.checked = !!s.value;
+    input.onchange = () => commit(s, input.checked ? "true" : "false", r);
+  }else{
+    input = document.createElement("input"); input.type = "number"; input.value = fmt(s.value);
+    input.step = s.type === "int" ? "1" : "any"; input.min = s.min; input.max = s.max;
+    const go = () => { if(String(input.value) !== fmt(s.value)) commit(s, input.value, r); };
+    input.onchange = go;
+    input.onkeydown = e => { if(e.key === "Enter") input.blur(); };
+  }
+  ctl.append(input);
+  if(s.unit){ const u = document.createElement("span"); u.className = "unit"; u.textContent = s.unit; ctl.append(u); }
+  if(changed){
+    const rb = btn("reset", () => resetOne(s, r), "reset"); rb.title = "back to default " + fmt(s.default); ctl.append(rb);
+  }
+
+  const help = document.createElement("div"); help.className = "help";
+  help.textContent = (s.help || "") + (s.type === "bool" ? "" : "  (allowed " + fmt(s.min) + " to " + fmt(s.max) + ", default " + fmt(s.default) + ")");
+  const msg = document.createElement("span"); msg.className = "msg"; help.append(msg);
+
+  r.append(name, ctl, help);
+  return r;
+}
+
+function showMsg(r, text, good){
+  const m = r && r.querySelector(".msg"); if(!m) return;
+  m.textContent = text; m.className = "msg " + (good ? "good" : "bad");
+}
+
+async function commit(s, value, r){
+  try{
+    const res = await call("/set?key=" + encodeURIComponent(s.key) + "&value=" + encodeURIComponent(value));
+    showMsg(r, res.result, res.ok);
+    if(res.ok){ await load(true); showMsg(document.querySelector('.row[data-key="' + s.key + '"]'), res.result, true);
+      if(!s.live && await ask("Restart needed", "<b>" + s.label + "</b> is saved. It only works after the robot program restarts (the robot stops for a few seconds).", "Restart now", "Later")) restartRobot(true); }
+    else { /* put the old value back */ const inp = r.querySelector("input"); if(s.type==="bool") inp.checked = !!s.value; else inp.value = fmt(s.value); }
+  }catch(e){ showMsg(r, "could not reach the robot", false); }
+}
+
+async function resetOne(s, r){
+  try{ await call("/reset?key=" + encodeURIComponent(s.key)); await load(true); }
+  catch(e){ showMsg(r, "could not reach the robot", false); }
+}
+
+async function load(keepScroll){
+  try{
+    const d = await call("/settings");
+    all = d.settings;
+    $("restartBanner").classList.toggle("show", !!d.restart_pending);
+    const y = window.scrollY;
+    render();
+    if(keepScroll) window.scrollTo(0, y);
+    setConn(true);
+    return true;
+  }catch(e){
+    setConn(false);
+    $("groups").innerHTML = "<p style='color:var(--err)'>Could not load settings from " + base() + ". Check the laptop is on the robot's Wi-Fi, the address above is right, and the robot program is running (Beginner guide, step 2). Then click Connect.</p>";
+    return false;
+  }
+}
+
+// ----------------------------------------------------------------- restart
+async function restartRobot(skipAsk){
+  if(skipAsk !== true && !await ask("Restart the robot program?", "The robot stops for a few seconds, then starts again.", "Restart", "Cancel")) return;
+  $("shareRes").textContent = "restarting...";
+  try{ await call("/restart"); }catch(e){}
+  setConn(false, "restarting...");
+  // Wait for it to go down, then come back.
+  const t0 = Date.now();
+  await new Promise(r => setTimeout(r, 2500));
+  for(;;){
+    if(Date.now() - t0 > 90000){ $("shareRes").textContent = "still not back after 90 s - look at the robot's terminal"; $("shareRes").className = "result bad"; return; }
+    if(await load(true)){ $("shareRes").textContent = "robot program is back"; $("shareRes").className = "result good"; return; }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
+// --------------------------------------------------------- calibration help
+function bindHelpers(){
+  $("wr_drive").onclick = () => doCmd("forward", parseFloat($("wr_cmd").value) || 1000, $("wr_res"));
+  $("wr_apply").onclick = async () => {
+    const cmd = parseFloat($("wr_cmd").value), meas = parseFloat($("wr_meas").value);
+    const cur = valueOf("WHEEL_RADIUS");
+    const res = $("wr_res");
+    if(!(cmd > 0) || !(meas > 0) || cur == null){ res.textContent = "type both distances first (and connect)"; res.className = "result bad"; return; }
+    // The robot converts encoder ticks to distance with the radius it believes.
+    // If it drove `meas` when it thought it drove `cmd`, scale by meas/cmd.
+    const next = Math.round(cur * meas / cmd * 100) / 100;
+    const r = await call("/set?key=WHEEL_RADIUS&value=" + next);
+    res.textContent = r.ok ? ("wheel radius " + fmt(cur) + " -> " + next + " mm. Drive again to check.") : r.result;
+    res.className = "result " + (r.ok ? "good" : "bad");
+    if(r.ok) load(true);
+  };
+  $("lf_try").onclick = () => {
+    // Uses the calibration range 0..180 temporarily: lift_to maps height -> angle,
+    // so convert the angle back into the current height scale.
+    const a0 = valueOf("LIFT_ANGLE_AT_MIN"), a1 = valueOf("LIFT_ANGLE_AT_MAX");
+    const h0 = valueOf("LIFT_MIN"), h1 = valueOf("LIFT_MAX");
+    const ang = parseFloat($("lf_ang").value);
+    const res = $("lf_res");
+    if(isNaN(ang) || a0 == null || a1 === a0){ res.textContent = "connect first"; res.className = "result bad"; return; }
+    const h = h0 + (ang - a0) / (a1 - a0) * (h1 - h0);
+    if(h < Math.min(h0,h1) - 0.01 || h > Math.max(h0,h1) + 0.01){
+      res.textContent = "that angle is outside the current range (" + fmt(a0) + "-" + fmt(a1) + "). Widen it first: set lowest angle 0 and highest 180 below, save, then try again.";
+      res.className = "result bad"; return; }
+    doCmd("lift_to", Math.round(h * 100) / 100, res);
+  };
+  $("lf_apply").onclick = async () => {
+    const v = id => parseFloat($(id).value);
+    const a0 = v("lf_a0"), h0 = v("lf_h0"), a1 = v("lf_a1"), h1 = v("lf_h1");
+    const res = $("lf_res");
+    if([a0,h0,a1,h1].some(isNaN)){ res.textContent = "fill in all four boxes"; res.className = "result bad"; return; }
+    if(!(h1 > h0)){ res.textContent = "the highest height must be bigger than the lowest"; res.className = "result bad"; return; }
+    const sets = [["LIFT_ANGLE_AT_MIN",a0],["LIFT_ANGLE_AT_MAX",a1],["LIFT_MIN",h0],["LIFT_MAX",h1]];
+    const bad = [];
+    for(const [k,x] of sets){ try{ const r = await call("/set?key=" + k + "&value=" + x); if(!r.ok) bad.push(r.result); }catch(e){ bad.push(k + ": no answer"); } }
+    res.textContent = bad.length ? ("problems: " + bad.join("; ")) : "saved: " + h0 + " mm at " + a0 + " deg, " + h1 + " mm at " + a1 + " deg";
+    res.className = "result " + (bad.length ? "bad" : "good");
+    load(true);
+  };
+}
+
+// -------------------------------------------------------------------- share
+function copyText(text){
+  const done = () => { $("shareRes").textContent = "copied"; $("shareRes").className = "result good"; };
+  const legacy = () => {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.append(ta); ta.select();
+    try{ document.execCommand("copy"); done(); }catch(e){ $("shareRes").textContent = "select the text in the box and copy it by hand"; $("shareRes").className = "result bad"; $("paste").value = text; }
+    ta.remove();
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, legacy); else legacy();
+}
+
+function bindShare(){
+  $("copyBtn").onclick = () => {
+    const lines = all.filter(s => s.value !== s.default).map(s => s.key + "=" + fmt(s.type === "bool" ? (s.value ? 1 : 0) : s.value));
+    if(!lines.length){ $("shareRes").textContent = "nothing changed from the defaults yet"; $("shareRes").className = "result"; return; }
+    copyText(lines.join("\n") + "\n");
+  };
+  $("applyBtn").onclick = async () => {
+    const lines = $("paste").value.split(/\r?\n/).map(l => l.trim()).filter(l => l && l[0] !== "#" && l.includes("="));
+    if(!lines.length){ $("shareRes").textContent = "paste some KEY=value lines first"; $("shareRes").className = "result bad"; return; }
+    let ok = 0, bad = [];
+    for(const l of lines){
+      const i = l.indexOf("="), k = l.slice(0, i).trim(), v = l.slice(i + 1).trim();
+      try{ const r = await call("/set?key=" + encodeURIComponent(k) + "&value=" + encodeURIComponent(v)); if(r.ok) ok++; else bad.push(k + ": " + r.result); }
+      catch(e){ bad.push(k + ": no answer"); }
+    }
+    $("shareRes").textContent = ok + " applied" + (bad.length ? ", problems: " + bad.join("; ") : "");
+    $("shareRes").className = "result " + (bad.length ? "bad" : "good");
+    load(true);
+  };
+  $("restartBtn").onclick = restartRobot;
+  $("restartBtn2").onclick = restartRobot;
+  $("resetAll").onclick = async () => {
+    if(!await ask("Reset EVERY setting?", "All settings go back to their defaults. Your calibration will be lost.", "Reset everything", "Cancel")) return;
+    try{ await call("/reset?key=all"); await load(true); $("shareRes").textContent = "all reset"; $("shareRes").className = "result good"; }
+    catch(e){ $("shareRes").textContent = "could not reach the robot"; $("shareRes").className = "result bad"; }
+  };
+}
+
+
+// ----------------------------------------------------------------- log
+let logText = "";
+async function pollLog(){
+  if(!$("logAuto").checked) return;
+  try{
+    const d = await call("/log?n=300", 2500);
+    const t = (d.lines || []).join("\n") || "(nothing logged yet)";
+    if(t !== logText){
+      const box = $("logBox"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+      logText = t; box.textContent = t;
+      if(atEnd) box.scrollTop = box.scrollHeight;
+    }
+  }catch(e){}
+}
+setInterval(pollLog, 2000);
+$("logCopy").onclick = () => copyText(logText);
+$("logSave").onclick = () => {
+  const blob = new Blob([logText + "\n"], {type:"text/plain"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "robot-log-" + new Date().toISOString().slice(0,19).replace(/[:T]/g,"-") + ".txt"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+
+// ------------------------------------------------------- continuous lift
+(function(){
+  const box = $("liftCont"), res = $("lc_res");
+  const b = (label, cmd, arg) => { const e = document.createElement("button"); e.textContent = label;
+    e.onclick = async () => { res.textContent = "running " + label + "... (watch the robot log below)"; res.className = "result";
+      try{ const r = await call("/do?cmd=" + cmd + "&arg=" + (arg || 0)); if(!r.ok){ res.textContent = r.result; res.className = "result bad"; } }
+      catch(e){ res.textContent = "could not reach the robot"; res.className = "result bad"; } };
+    box.append(e); };
+  b("Find bottom", "lift_find_bottom");
+  b("Calibrate lift", "lift_calibrate");
+  b("Storage slot (32 mm)", "lift_to", 32);
+  b("Stand 1", "lift_stand", 1); b("Stand 2", "lift_stand", 2); b("Stand 3", "lift_stand", 3); b("Stand 4", "lift_stand", 4);
+  b("Carry height", "lift_carry");
+})();
+
+// ------------------------------------------- lift ruler calibration
+(function(){
+  const res = $("rc_res"), t = () => parseFloat($("rc_t").value);
+  const say = (m, ok) => { res.textContent = m; res.className = "result " + (ok ? "good" : "bad"); };
+  const run = async cmd => { if(!(t() > 0)){ say("type a run time first", false); return; }
+    try{ const r = await call("/do?cmd=" + cmd + "&arg=" + t()); say(r.ok ? "running for " + t() + " s - measure when it stops" : r.result, r.ok); }
+    catch(e){ say("could not reach the robot", false); } };
+  const save = async (key, mmPerS) => {
+    if(!(mmPerS > 0)){ say("the numbers don't give a positive speed - check the heights", false); return; }
+    const v = Math.round(mmPerS * 100) / 100;
+    try{ const r = await call("/set?key=" + key + "&value=" + v); say(r.ok ? key + " = " + v + " mm/s saved" : r.result, r.ok); if(r.ok) load(true); }
+    catch(e){ say("could not reach the robot", false); } };
+  $("rc_up").onclick = () => run("lift_run_up");
+  $("rc_down").onclick = () => run("lift_run_down");
+  $("rc_saveup").onclick = () => save("LIFT_UP_MM_S", (parseFloat($("rc_h1").value) - valueOf("LIFT_MIN")) / t());
+  $("rc_savedown").onclick = () => save("LIFT_DOWN_MM_S", (parseFloat($("rc_h1").value) - parseFloat($("rc_h2").value)) / t());
+})();
+
+// ------------------------------------------------------- whole-robot test
+(function(){
+  const T = [["Forward",0.3,0,0],["Backward",-0.3,0,0],["Turn left",0,0,0.3],["Turn right",0,0,-0.3],
+             ["Move LEFT side (strafe)",0,0.3,0],["Move RIGHT side (strafe)",0,-0.3,0]];
+  T.forEach(([label, vx, vy, w]) => {
+    const e = document.createElement("button"); e.textContent = label;
+    e.onclick = async () => {
+      const res = $("testResult"); res.textContent = label + "..."; res.className = "result";
+      const t0 = Date.now();
+      try{
+        while(Date.now() - t0 < 700){
+          await call("/drive?vx=" + vx + "&vy=" + vy + "&w=" + w, 400);
+          await new Promise(r => setTimeout(r, 120));
+        }
+        await call("/drive?vx=0&vy=0&w=0", 400);
+        res.textContent = label + " done - did it go that way? If not: fix the wheel that is wrong with the Spin buttons above.";
+        res.className = "result good";
+      }catch(err){ res.textContent = "could not reach the robot"; res.className = "result bad"; }
+    };
+    $("driveBtns").append(e);
+  });
+})();
+
+// ------------------------------------------------------------ servo finder
+async function servoTry(deg){
+  if(deg != null) $("sf_deg").value = deg;
+  const ch = parseInt($("sf_ch").value, 10), d = parseFloat($("sf_deg").value);
+  const res = $("sf_res");
+  if(isNaN(ch) || isNaN(d)){ res.textContent = "type a pin and an angle"; res.className = "result bad"; return; }
+  try{
+    const r = await call("/servotest?pin=" + ch + "&deg=" + d);
+    res.textContent = r.ok ? ("sent pin " + ch + " to " + d + " deg - did a servo move?") : r.result;
+    res.className = "result " + (r.ok ? "good" : "bad");
+  }catch(e){ res.textContent = "could not reach the robot (or its program is older than this page: copy + rebuild)"; res.className = "result bad"; }
+}
+$("sf_try").onclick = () => servoTry();
+$("sf_0").onclick = () => servoTry(0);
+$("sf_90").onclick = () => servoTry(90);
+$("sf_180").onclick = () => servoTry(180);
+// --------------------------------------------------------------------- init
+function connect(){
+  saveLocal();
+  if(timer) clearInterval(timer);
+  load(false);
+  poll();
+  timer = setInterval(poll, 1000);
+}
+
+loadLocal();
+buildTests();
+bindHelpers();
+bindShare();
+$("connectBtn").onclick = connect;
+$("enableBtn").onclick = async () => { try{ await call("/enable?on=1"); }catch(e){} poll(); };
+$("filter").oninput = render;
+$("showChanged").onclick = () => { onlyChanged = !onlyChanged; $("showChanged").textContent = onlyChanged ? "Show all" : "Only changed"; render(); };
+connect();
+</script>
+
+<script id="hubnav-js">
+/* Keep the shared robot address up to date and carry it on every menu link. */
+(function(){
+  var K="studica.robot", H=["host","rHost"], P=["port","rPort"];
+  function el(ids){ for(var i=0;i<ids.length;i++){ var e=document.getElementById(ids[i]); if(e) return e; } return null; }
+  function cur(){
+    var h=el(H), p=el(P), r=null;
+    try{ r=JSON.parse(localStorage.getItem(K)||"null"); }catch(e){}
+    return { host:(h&&h.value.trim())||(r&&r.host)||"", port:(p&&p.value.trim())||(r&&r.port)||"5800" };
+  }
+  function store(){ var c=cur(); if(c.host){ try{ localStorage.setItem(K,JSON.stringify(c)); }catch(e){} } }
+  [el(H),el(P)].forEach(function(e){ if(e){ e.addEventListener("input",store); e.addEventListener("change",store); } });
+  store();
+  document.querySelectorAll('#hubnav a').forEach(function(a){
+    a.addEventListener("click",function(){ var c=cur(); if(!c.host) return;
+      var base=a.getAttribute("href").split("?")[0];
+      a.href=base+"?host="+encodeURIComponent(c.host)+"&port="+encodeURIComponent(c.port); });
+  });
+})();
+</script>
+<div id="askModal" style="position:fixed;inset:0;background:rgba(10,20,40,.55);display:none;place-items:center;z-index:99">
+ <div style="background:var(--panel,#fff);color:var(--ink,#111);border-radius:16px;padding:24px;max-width:460px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">
+  <h3 id="askT" style="margin:0 0 8px;font-size:20px"></h3><p id="askP" style="margin:0 0 18px"></p>
+  <div style="display:flex;gap:10px;justify-content:flex-end"><button id="askNo" style="font-size:16px;padding:10px 18px">Cancel</button><button id="askYes" class="primary" style="font-size:16px;padding:10px 18px">OK</button></div>
+ </div></div>
+<script>
+function ask(title, text, yes, no){
+  return new Promise(res => {
+    const m = document.getElementById("askModal");
+    document.getElementById("askT").textContent = title; document.getElementById("askP").innerHTML = text;
+    document.getElementById("askYes").textContent = yes || "OK"; document.getElementById("askNo").textContent = no || "Cancel";
+    m.style.display = "grid";
+    document.getElementById("askYes").onclick = () => { m.style.display = "none"; res(true); };
+    document.getElementById("askNo").onclick  = () => { m.style.display = "none"; res(false); };
+  });
+}
+</script>
+</body>
+</html>

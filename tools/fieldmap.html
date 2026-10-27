@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Field Map &amp; Waypoints</title>
+<!--
+  ESC2026 Skill 23 - court map, waypoint and obstacle editor.
+
+  WHY (CID references)
+    5.6   "a court measuring around 2m x 4m, 4m x 4m, 4m x 8m or 8m x 8m.
+           The court layout and test objects will be made available to
+           Competitors on C1." The Module G court IS known in advance, so
+           waypoints are the right tool for it.
+    G.3.3 Product Source Shelves: 120-130 cm long, 20 cm deep.
+    G.3.2 Elevated Platform / Ramp.
+    G.3.1 Delivery box 60 x 60 x 150 mm, red/green/blue.
+    3.1   Robot fits 600 x 600 x 600 mm at the start - drawn to scale so you
+           can see whether it actually fits where you are sending it.
+
+  COORDINATE FRAME (ROS REP-103, matching studica_control)
+    origin  bottom-left corner of the court
+    +x      along the court LENGTH, to the right
+    +y      across the court WIDTH, upward on screen
+    heading 0 deg = +x, counter-clockwise positive
+  Metres throughout. Never mix in millimetres - that mistake costs a run.
+
+  TWO OBSTACLE PRIMITIVES
+    wall  a segment with a thickness - angled barriers, shelf faces
+    area  an axis-aligned rectangle - ramps, platforms, delivery zones
+  Areas are deliberately axis-aligned: rotation costs a lot of interaction
+  complexity, and a rotated obstacle is nearly always expressible as a wall.
+
+  SELF-CONTAINED. No CDN. CID 4.2 forbids internet on site.
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#14171c; --muted:#5b6472; --line:#dde1e8;
+  --accent:#1f6feb; --ok:#127a3e; --warn:#a15c00; --err:#c0281c;
+  --okbg:#e7f5ec; --chip:#eef1f6; --field:#eceff4; --grid:#c8cfd9;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+    --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+    --okbg:#12251b; --chip:#1e242c; --field:#12161c; --grid:#2b323d;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+  --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+  --okbg:#12251b; --chip:#1e242c; --field:#12161c; --grid:#2b323d;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;
+  background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
+h1{font-size:15px;margin:0;font-weight:650}
+h1 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.grow{flex:1}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:7px;
+  padding:6px 11px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--err)}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+input,select{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:5px 8px;min-width:0}
+main{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:14px;padding:14px;
+  align-items:start}
+@media(max-width:1000px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:13px 15px;margin-bottom:14px}
+.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  margin:0 0 10px;display:flex;gap:8px;align-items:center}
+svg{width:100%;height:auto;background:var(--field);border-radius:8px;
+  border:1px solid var(--line);touch-action:none;display:block}
+.palette{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.chip{display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg);cursor:grab;font-size:12px;
+  user-select:none;touch-action:none}
+.chip:active{cursor:grabbing}
+.chip .sw{width:13px;height:13px;border-radius:3px}
+.chip .sw.line{height:5px;width:17px;border-radius:2px}
+#ghost{position:fixed;pointer-events:none;z-index:100;opacity:.9;display:none;
+  padding:5px 10px;border-radius:8px;background:var(--accent);color:#fff;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:4px 5px;border-bottom:1px solid var(--line)}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+td.n{font-family:var(--mono);color:var(--muted);width:22px}
+tr.sel{background:var(--okbg)}
+td input{width:100%;padding:3px 5px;font-size:12px}
+td input.xy{width:58px;font-family:var(--mono)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  padding:11px;overflow-x:auto;font-family:var(--mono);font-size:12px;max-height:340px}
+.tabs{display:flex;gap:5px;margin-bottom:9px;flex-wrap:wrap}
+.stat{display:flex;justify-content:space-between;font-size:12px;padding:2px 0}
+.stat b{font-family:var(--mono)}
+.hint{font-size:12px;color:var(--muted);margin-top:8px}
+kbd{font-family:var(--mono);font-size:11px;background:var(--chip);padding:1px 5px;
+  border-radius:4px;border:1px solid var(--line)}
+</style>
+
+<style id="hubnav-css">#hubnav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:5px 12px;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--chip,#eef1f6);border-bottom:1px solid var(--line,#dde1e8)}#hubnav a{color:var(--muted,#5b6472);text-decoration:none;padding:2px 9px;border-radius:6px}#hubnav a:hover{background:var(--panel,#fff);color:var(--ink,#14171c)}#hubnav a.here{background:var(--accent,#1f6feb);color:#fff}#hubnav b{margin-right:6px;color:var(--ink,#14171c);font-weight:650}</style>
+<script id="hubnav-head">
+/* ONE robot address for every page. Typed on any page, it is saved here and
+   every other page opens with it (added to the address bar as ?host=&port=). */
+(function(){try{
+  var q=new URLSearchParams(location.search), K="studica.robot";
+  var r=JSON.parse(localStorage.getItem(K)||"null");
+  if(q.get("host")){ localStorage.setItem(K,JSON.stringify({host:q.get("host"),port:q.get("port")||"5800"})); }
+  else if(r&&r.host){ q.set("host",r.host); q.set("port",r.port||"5800");
+    location.replace(location.pathname+"?"+q.toString()+location.hash); }
+}catch(e){}})();
+</script>
+</head>
+<body>
+<nav id="hubnav"><b>SC2026</b><a href="../index.html">Workbench</a><a href="../BEGINNER-GUIDE.html">1 Beginner guide</a><a href="../tools/portplanner.html">2 Port planner</a><a href="../tools/settings.html">3 Robot settings</a><a href="../tools/controlpanel.html">4 Control panel</a><a href="../tools/fieldmap.html" class="here">5 Field map</a><a href="../tools/runconsole.html">Run console (old brief)</a><a href="../tools/camview.html">Camera (old brief)</a></nav>
+
+
+
+<header>
+  <h1>Field Map <small>ESC2026 &middot; Skill 23</small></h1>
+  <span class="grow"></span>
+  <label style="font-size:12px;color:var(--muted)">Court
+    <select id="preset">
+      <option value="2,4">2 × 4 m</option>
+      <option value="4,4">4 × 4 m</option>
+      <option value="4,8" selected>4 × 8 m</option>
+      <option value="8,8">8 × 8 m</option>
+    </select></label>
+  <label style="font-size:12px;color:var(--muted)">Snap
+    <select id="snap">
+      <option value="0">off</option>
+      <option value="0.05">5 cm</option>
+      <option value="0.1" selected>10 cm</option>
+      <option value="0.25">25 cm</option>
+    </select></label>
+  <button id="exportBtn">Export JSON</button>
+  <button id="importBtn">Import</button>
+  <button id="clearBtn" class="danger">Clear all</button>
+  <input type="file" id="fileIn" accept=".json" hidden>
+</header>
+
+<div id="ghost"></div>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2>Court <span id="dims" style="color:var(--muted)"></span></h2>
+      <div class="palette" id="palette"></div>
+      <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+      <p class="hint"><b>Drag a chip onto the court</b> to place it. Drag any
+      object to move it. Select one to get handles — <b>walls</b> resize from
+      their end dots, <b>areas</b> from their corners. <kbd>Delete</kbd> removes
+      the selection, <kbd>Esc</kbd> deselects.</p>
+      <p class="note">Origin is the <b>bottom-left</b> corner; <b>+x</b> runs
+      along the length, <b>+y</b> across the width, heading <b>0°&nbsp;=&nbsp;+x</b>
+      counter-clockwise — ROS REP-103, so it matches <code>studica_control</code>
+      without conversion. Everything is in metres.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Export</h2>
+      <div class="tabs" id="tabs"></div>
+      <button id="copyBtn" style="margin-bottom:9px">Copy to clipboard</button>
+      <pre id="code"></pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="panel">
+      <h2>Waypoints</h2>
+      <table id="wpTbl"></table>
+    </div>
+
+    <div class="panel">
+      <h2>Walls</h2>
+      <table id="wallTbl"></table>
+      <p class="note"><code>thick</code> is the <b>footprint</b> the robot must
+      drive around, in metres — not the obstacle's height. Module D test walls
+      are 300–600&nbsp;mm <i>tall</i> (CID 4.1), which is a different number.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Areas</h2>
+      <table id="rectTbl"></table>
+      <p class="note">Axis-aligned rectangles for ramps, platforms and delivery
+      zones. Mark one <b>passable</b> if the robot may drive over it (a ramp) —
+      passable areas are excluded from the clearance check.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Route</h2>
+      <div class="stat"><span>Waypoints</span><b id="sCount">0</b></div>
+      <div class="stat"><span>Path length</span><b id="sLen">0.00 m</b></div>
+      <div class="stat"><span>Longest leg</span><b id="sMax">—</b></div>
+      <p class="note" id="fitNote"></p>
+    </div>
+
+    <div class="panel">
+      <h2>Robot</h2>
+      <div class="row">
+        <label style="font-size:12px;color:var(--muted)">Footprint (mm)
+          <input id="fp" type="number" value="600" style="width:80px"></label>
+        <label style="font-size:12px;color:var(--muted)">
+          <input id="showFp" type="checkbox" checked> show at waypoints</label>
+      </div>
+      <p class="note">600 mm is the CID start-size limit (3.1). Measure your
+      real width and use that — the clearance check depends on it.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const KEY="studica.fieldmap.v2";
+
+const WPKINDS={start:"#2e9e4f",shelf:"#d9a021",delivery:"#2f6fd0",ramp:"#8b5cf6",via:"#7a8291"};
+const WALLKINDS={wall:"#5b6472",shelf:"#c07a2a",barrier:"#b4453a"};
+const RECTKINDS={ramp:"#8b5cf6",platform:"#0d9488",zone:"#2f6fd0",box:"#d9a021"};
+// Default footprint thickness per wall kind, in metres.
+// shelf = 0.20 because CID G.3.3 gives the dispensary a 20 cm depth.
+const WTHICK={wall:0.05,shelf:0.20,barrier:0.10};
+// Areas the robot may drive over are excluded from the clearance check.
+const PASSABLE_DEFAULT={ramp:true,platform:true,zone:true,box:false};
+
+const PALETTE=[
+  {t:"wp",   kind:"start",    label:"Start"},
+  {t:"wp",   kind:"shelf",    label:"Shelf pose"},
+  {t:"wp",   kind:"delivery", label:"Delivery pose"},
+  {t:"wp",   kind:"via",      label:"Via"},
+  {t:"wall", kind:"wall",     label:"Wall"},
+  {t:"wall", kind:"shelf",    label:"Shelf face"},
+  {t:"wall", kind:"barrier",  label:"Barrier"},
+  {t:"rect", kind:"ramp",     label:"Ramp"},
+  {t:"rect", kind:"platform", label:"Platform"},
+  {t:"rect", kind:"zone",     label:"Delivery zone"},
+  {t:"rect", kind:"box",      label:"Box"},
+];
+
+let S={ W:8, H:4, snap:0.1, fp:600, showFp:true,
+        wps:[], walls:[], rects:[], sel:null };
+let lang="yaml", ids={wp:1,wall:1,rect:1}, drag=null, ghost=null;
+
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+// round after snapping: 0.1*34 lands on 3.4000000000000004 otherwise,
+// which then leaks into the exported coordinates
+const snapv=v=>Math.round((S.snap>0 ? Math.round(v/S.snap)*S.snap : v)*1e4)/1e4;
+const ident=s=>{ let x=String(s).replace(/[^A-Za-z0-9_]/g,"_");
+  if(/^[0-9]/.test(x)) x="_"+x; return x.toLowerCase()||"wp"; };
+const r2=v=>Math.round(v*1000)/1000;
+
+function load(){ try{ const r=localStorage.getItem(KEY);
+  if(r){ const s=JSON.parse(r);
+    if(s&&Array.isArray(s.wps)){
+      S=Object.assign(S,s);
+      for(const k of ["wps","walls","rects"]) if(!Array.isArray(S[k])) S[k]=[];
+      ids.wp  =Math.max(0,...S.wps.map(o=>o.id||0))+1;
+      ids.wall=Math.max(0,...S.walls.map(o=>o.id||0))+1;
+      ids.rect=Math.max(0,...S.rects.map(o=>o.id||0))+1;
+    } } }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+
+function uniqueName(base){
+  let n=0,nm; do{ nm=base+(n++||""); }
+  while(S.wps.some(o=>o.name===nm)||S.walls.some(o=>o.name===nm)||S.rects.some(o=>o.name===nm));
+  return nm;
+}
+const selKey=(t,id)=>t+":"+id;
+const isSel=(t,id)=>S.sel===selKey(t,id);
+function find(key){
+  if(!key) return null;
+  const [t,id]=key.split(":");
+  const arr = t==="wp"?S.wps : t==="wall"?S.walls : S.rects;
+  const o=arr.find(o=>o.id===+id);
+  return o?{t,o}:null;
+}
+
+/* --------------------------- create --------------------------- */
+function addWp(x,y,kind){
+  const o={id:ids.wp++,name:uniqueName(kind||"via"),x:snapv(x),y:snapv(y),th:0,
+           kind:kind||"via"};
+  S.wps.push(o); S.sel=selKey("wp",o.id); return o;
+}
+function addWall(x,y,kind){
+  kind=kind||"wall";
+  const L=Math.min(1.0,S.W/4);
+  const o={id:ids.wall++,name:uniqueName(kind),kind,
+           x1:snapv(clamp(x-L/2,0,S.W)),y1:snapv(clamp(y,0,S.H)),
+           x2:snapv(clamp(x+L/2,0,S.W)),y2:snapv(clamp(y,0,S.H)),
+           thick:WTHICK[kind]||0.05};
+  S.walls.push(o); S.sel=selKey("wall",o.id); return o;
+}
+function addRect(x,y,kind){
+  kind=kind||"zone";
+  // the box default is the real delivery-box footprint from CID G.3.1
+  const w = kind==="box"?0.06:0.6, h = kind==="box"?0.06:0.6;
+  const o={id:ids.rect++,name:uniqueName(kind),kind,
+           x:snapv(clamp(x-w/2,0,S.W-w)),y:snapv(clamp(y-h/2,0,S.H-h)),
+           w,h,passable:!!PASSABLE_DEFAULT[kind]};
+  S.rects.push(o); S.sel=selKey("rect",o.id); return o;
+}
+
+/* --------------------------- geometry --------------------------- */
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function ptSeg(px,py,ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy;
+  let t = L2>1e-12 ? ((px-ax)*dx+(py-ay)*dy)/L2 : 0;
+  t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+}
+function segCross(p1,p2,p3,p4){
+  const cr=(ax,ay,bx,by,cx,cy)=>(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
+  const d1=cr(p3.x,p3.y,p4.x,p4.y,p1.x,p1.y);
+  const d2=cr(p3.x,p3.y,p4.x,p4.y,p2.x,p2.y);
+  const d3=cr(p1.x,p1.y,p2.x,p2.y,p3.x,p3.y);
+  const d4=cr(p1.x,p1.y,p2.x,p2.y,p4.x,p4.y);
+  return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
+}
+function segSeg(a,b,c,d){
+  if(segCross(a,b,c,d)) return 0;
+  return Math.min(
+    ptSeg(a.x,a.y,c.x,c.y,d.x,d.y), ptSeg(b.x,b.y,c.x,c.y,d.x,d.y),
+    ptSeg(c.x,c.y,a.x,a.y,b.x,b.y), ptSeg(d.x,d.y,a.x,a.y,b.x,b.y));
+}
+const rectEdges=r=>[
+  [{x:r.x,y:r.y},{x:r.x+r.w,y:r.y}],
+  [{x:r.x+r.w,y:r.y},{x:r.x+r.w,y:r.y+r.h}],
+  [{x:r.x+r.w,y:r.y+r.h},{x:r.x,y:r.y+r.h}],
+  [{x:r.x,y:r.y+r.h},{x:r.x,y:r.y}]];
+const ptInRect=(px,py,r)=>px>=r.x&&px<=r.x+r.w&&py>=r.y&&py<=r.y+r.h;
+
+/** Route legs passing too close to a BLOCKING obstacle.
+ *  Required clearance is half the robot plus half the wall thickness. */
+function clearanceIssues(){
+  const half=(+S.fp||600)/2000, out=[], EPS=0.001;
+  for(let i=1;i<S.wps.length;i++){
+    const a=S.wps[i-1], b=S.wps[i];
+    for(const w of S.walls){
+      const gap=segSeg(a,b,{x:w.x1,y:w.y1},{x:w.x2,y:w.y2}) - (w.thick||0.05)/2;
+      if(gap < half-EPS) out.push({a,b,obj:w,kind:w.kind,gap,need:half});
+    }
+    for(const r of S.rects){
+      if(r.passable) continue;
+      let gap;
+      if(ptInRect(a.x,a.y,r)||ptInRect(b.x,b.y,r)) gap=0;
+      else gap=Math.min.apply(null,rectEdges(r).map(e=>segSeg(a,b,e[0],e[1])));
+      if(gap < half-EPS) out.push({a,b,obj:r,kind:r.kind,gap,need:half});
+    }
+  }
+  return out;
+}
+
+/* ----------------------------- map ------------------------------ */
+const sy=y=>S.H-y;   // SVG y grows down; the field frame grows up
+function svgEl(n,attrs){ const e=document.createElementNS("http://www.w3.org/2000/svg",n);
+  for(const k in attrs) e.setAttribute(k,attrs[k]); return e; }
+
+function renderMap(){
+  const svg=$("map"), pad=0.4;
+  svg.setAttribute("viewBox",(-pad)+" "+(-pad)+" "+(S.W+pad*2)+" "+(S.H+pad*2));
+  svg.innerHTML="";
+
+  for(let x=0;x<=S.W+1e-9;x+=0.5)
+    svg.append(svgEl("line",{x1:x,y1:0,x2:x,y2:S.H,stroke:"var(--grid)",
+      "stroke-width":(Math.abs(x%1)<1e-9?0.012:0.005)}));
+  for(let y=0;y<=S.H+1e-9;y+=0.5)
+    svg.append(svgEl("line",{x1:0,y1:sy(y),x2:S.W,y2:sy(y),stroke:"var(--grid)",
+      "stroke-width":(Math.abs(y%1)<1e-9?0.012:0.005)}));
+  svg.append(svgEl("rect",{x:0,y:0,width:S.W,height:S.H,fill:"none",
+    stroke:"var(--ink)","stroke-width":0.025}));
+
+  for(let x=0;x<=S.W+1e-9;x+=1){
+    const t=svgEl("text",{x:x,y:S.H+0.28,"font-size":0.17,fill:"var(--muted)",
+      "text-anchor":"middle"}); t.textContent=x+"m"; svg.append(t); }
+  for(let y=0;y<=S.H+1e-9;y+=1){
+    const t=svgEl("text",{x:-0.12,y:sy(y)+0.06,"font-size":0.17,fill:"var(--muted)",
+      "text-anchor":"end"}); t.textContent=y+"m"; svg.append(t); }
+
+  // ---- areas (bottom layer) ----
+  S.rects.forEach(r=>{
+    const col=RECTKINDS[r.kind]||"#888";
+    const g=svgEl("g",{class:"obj","data-t":"rect","data-id":r.id,style:"cursor:move"});
+    g.append(svgEl("rect",{x:r.x,y:sy(r.y+r.h),width:r.w,height:r.h,
+      fill:col,"fill-opacity":(r.passable?0.12:0.25),stroke:col,
+      "stroke-width":0.02,"stroke-dasharray":(r.passable?"0.1 0.07":"none")}));
+    const t=svgEl("text",{x:r.x+r.w/2,y:sy(r.y+r.h/2)+0.05,"font-size":0.15,
+      fill:"var(--ink)","text-anchor":"middle","pointer-events":"none"});
+    t.textContent=r.name; g.append(t);
+    svg.append(g);
+    if(isSel("rect",r.id)){
+      [[r.x,r.y],[r.x+r.w,r.y],[r.x+r.w,r.y+r.h],[r.x,r.y+r.h]].forEach((c,i)=>{
+        svg.append(svgEl("circle",{cx:c[0],cy:sy(c[1]),r:0.075,fill:"var(--panel)",
+          stroke:col,"stroke-width":0.022,class:"handle","data-t":"rectC",
+          "data-id":r.id,"data-i":i,style:"cursor:nwse-resize"}));
+      });
+    }
+  });
+
+  // ---- walls ----
+  S.walls.forEach(w=>{
+    const col=WALLKINDS[w.kind]||"#5b6472";
+    const g=svgEl("g",{class:"obj","data-t":"wall","data-id":w.id,style:"cursor:move"});
+    g.append(svgEl("line",{x1:w.x1,y1:sy(w.y1),x2:w.x2,y2:sy(w.y2),stroke:col,
+      "stroke-width":Math.max(w.thick||0.05,0.04),"stroke-linecap":"round",
+      "stroke-opacity":0.9}));
+    svg.append(g);
+    if(isSel("wall",w.id)){
+      svg.append(svgEl("line",{x1:w.x1,y1:sy(w.y1),x2:w.x2,y2:sy(w.y2),
+        stroke:"var(--ink)","stroke-width":0.014,"stroke-dasharray":"0.08 0.06",
+        "pointer-events":"none"}));
+      [[w.x1,w.y1,0],[w.x2,w.y2,1]].forEach(function(h){
+        svg.append(svgEl("circle",{cx:h[0],cy:sy(h[1]),r:0.085,fill:"var(--panel)",
+          stroke:col,"stroke-width":0.022,class:"handle","data-t":"wallE",
+          "data-id":w.id,"data-i":h[2],style:"cursor:crosshair"}));
+      });
+    }
+  });
+
+  // ---- route ----
+  if(S.wps.length>1)
+    svg.append(svgEl("polyline",{points:S.wps.map(w=>w.x+","+sy(w.y)).join(" "),
+      fill:"none",stroke:"var(--accent)","stroke-width":0.028,
+      "stroke-dasharray":"0.12 0.08","stroke-linejoin":"round",
+      "pointer-events":"none"}));
+
+  clearanceIssues().forEach(iss=>{
+    svg.append(svgEl("line",{x1:iss.a.x,y1:sy(iss.a.y),x2:iss.b.x,y2:sy(iss.b.y),
+      stroke:"var(--err)","stroke-width":0.045,"stroke-opacity":0.7,
+      "pointer-events":"none"}));
+  });
+
+  // ---- waypoints (top layer) ----
+  const fpm=(+S.fp||600)/1000;
+  S.wps.forEach((w,i)=>{
+    const col=WPKINDS[w.kind]||"#7a8291";
+    const g=svgEl("g",{class:"obj","data-t":"wp","data-id":w.id,style:"cursor:grab"});
+    if(S.showFp)
+      g.append(svgEl("rect",{x:w.x-fpm/2,y:sy(w.y)-fpm/2,width:fpm,height:fpm,
+        fill:col,"fill-opacity":0.10,stroke:col,"stroke-opacity":0.5,
+        "stroke-width":0.012,transform:"rotate("+(-w.th)+" "+w.x+" "+sy(w.y)+")"}));
+    const rad=w.th*Math.PI/180;
+    g.append(svgEl("line",{x1:w.x,y1:sy(w.y),x2:w.x+0.34*Math.cos(rad),
+      y2:sy(w.y)-0.34*Math.sin(rad),stroke:col,"stroke-width":0.035}));
+    g.append(svgEl("circle",{cx:w.x,cy:sy(w.y),r:0.11,fill:col,
+      stroke:(isSel("wp",w.id)?"var(--ink)":"none"),"stroke-width":0.03}));
+    const t=svgEl("text",{x:w.x+0.17,y:sy(w.y)-0.15,"font-size":0.19,
+      fill:"var(--ink)","font-weight":"600","pointer-events":"none"});
+    t.textContent=(i+1)+" "+w.name; g.append(t);
+    svg.append(g);
+  });
+
+  $("dims").textContent=S.W+" × "+S.H+" m";
+}
+
+/* --------------------------- pointer --------------------------- */
+function toField(evt){
+  const svg=$("map"), r=svg.getBoundingClientRect(), vb=svg.viewBox.baseVal;
+  const ux=vb.x+((evt.clientX-r.left)/r.width)*vb.width;
+  const uy=vb.y+((evt.clientY-r.top)/r.height)*vb.height;
+  return {x:ux, y:S.H-uy};
+}
+const overMap=e=>{ const r=$("map").getBoundingClientRect();
+  return e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom; };
+
+$("map").addEventListener("pointerdown",e=>{
+  const h=e.target.closest(".handle");
+  if(h){
+    drag={mode:h.dataset.t,id:+h.dataset.id,i:+h.dataset.i};
+    $("map").setPointerCapture(e.pointerId); return;
+  }
+  const g=e.target.closest(".obj");
+  if(g){
+    const t=g.dataset.t, id=+g.dataset.id;
+    S.sel=selKey(t,id);
+    const p=toField(e), rec=find(S.sel);
+    if(t==="wp")   drag={mode:"wp",id,dx:rec.o.x-p.x,dy:rec.o.y-p.y};
+    if(t==="wall") drag={mode:"wallB",id,dx:rec.o.x1-p.x,dy:rec.o.y1-p.y,
+                         len:{x:rec.o.x2-rec.o.x1,y:rec.o.y2-rec.o.y1}};
+    if(t==="rect") drag={mode:"rectB",id,dx:rec.o.x-p.x,dy:rec.o.y-p.y};
+    $("map").setPointerCapture(e.pointerId); render(); return;
+  }
+  S.sel=null; render();
+});
+
+$("map").addEventListener("pointermove",e=>{
+  if(!drag) return;
+  const p=toField(e);
+  if(drag.mode==="wp"){
+    const o=S.wps.find(o=>o.id===drag.id); if(!o) return;
+    o.x=clamp(snapv(p.x+drag.dx),0,S.W); o.y=clamp(snapv(p.y+drag.dy),0,S.H);
+  } else if(drag.mode==="wallB"){
+    const o=S.walls.find(o=>o.id===drag.id); if(!o) return;
+    const nx=snapv(p.x+drag.dx), ny=snapv(p.y+drag.dy);
+    o.x1=clamp(nx,0,S.W); o.y1=clamp(ny,0,S.H);
+    o.x2=clamp(nx+drag.len.x,0,S.W); o.y2=clamp(ny+drag.len.y,0,S.H);
+  } else if(drag.mode==="wallE"){
+    const o=S.walls.find(o=>o.id===drag.id); if(!o) return;
+    const nx=clamp(snapv(p.x),0,S.W), ny=clamp(snapv(p.y),0,S.H);
+    if(drag.i===0){ o.x1=nx; o.y1=ny; } else { o.x2=nx; o.y2=ny; }
+  } else if(drag.mode==="rectB"){
+    const o=S.rects.find(o=>o.id===drag.id); if(!o) return;
+    o.x=clamp(snapv(p.x+drag.dx),0,S.W-o.w); o.y=clamp(snapv(p.y+drag.dy),0,S.H-o.h);
+  } else if(drag.mode==="rectC"){
+    const o=S.rects.find(o=>o.id===drag.id); if(!o) return;
+    // the opposite corner stays pinned, so the rect grows from the handle
+    const corners=[[o.x,o.y],[o.x+o.w,o.y],[o.x+o.w,o.y+o.h],[o.x,o.y+o.h]];
+    const fixed=corners[(drag.i+2)%4];
+    const nx=clamp(snapv(p.x),0,S.W), ny=clamp(snapv(p.y),0,S.H);
+    const x0=Math.min(fixed[0],nx), x1=Math.max(fixed[0],nx);
+    const y0=Math.min(fixed[1],ny), y1=Math.max(fixed[1],ny);
+    o.x=x0; o.y=y0; o.w=Math.max(0.05,x1-x0); o.h=Math.max(0.05,y1-y0);
+  }
+  render();
+});
+$("map").addEventListener("pointerup",()=>{ if(drag){ drag=null; save(); render(); } });
+
+/* ------------------------ palette drag-drop ------------------------ */
+function buildPalette(){
+  const host=$("palette"); host.innerHTML="";
+  PALETTE.forEach(item=>{
+    const c=document.createElement("div"); c.className="chip";
+    const col = item.t==="wp"?WPKINDS[item.kind]
+              : item.t==="wall"?WALLKINDS[item.kind] : RECTKINDS[item.kind];
+    const sw=document.createElement("span");
+    sw.className="sw"+(item.t==="wall"?" line":"");
+    sw.style.background=col;
+    if(item.t==="wp") sw.style.borderRadius="50%";
+    c.append(sw,document.createTextNode(item.label));
+    c.addEventListener("pointerdown",e=>{
+      e.preventDefault();
+      ghost={item:item};
+      const g=$("ghost");
+      g.textContent=item.label; g.style.display="block";
+      g.style.background="var(--muted)";
+      g.style.left=(e.clientX+12)+"px"; g.style.top=(e.clientY+12)+"px";
+      c.setPointerCapture(e.pointerId);
+    });
+    c.addEventListener("pointermove",e=>{
+      if(!ghost) return;
+      const g=$("ghost");
+      g.style.left=(e.clientX+12)+"px"; g.style.top=(e.clientY+12)+"px";
+      g.style.background = overMap(e) ? "var(--ok)" : "var(--muted)";
+    });
+    c.addEventListener("pointerup",e=>{
+      if(!ghost) return;
+      $("ghost").style.display="none";
+      if(overMap(e)){
+        const p=toField(e);
+        if(ghost.item.t==="wp")   addWp(p.x,p.y,ghost.item.kind);
+        if(ghost.item.t==="wall") addWall(p.x,p.y,ghost.item.kind);
+        if(ghost.item.t==="rect") addRect(p.x,p.y,ghost.item.kind);
+        render();
+      }
+      ghost=null;
+    });
+    host.append(c);
+  });
+}
+
+/* ---------------------------- tables ---------------------------- */
+function numCell(val,on,step){
+  const td=document.createElement("td");
+  const inp=document.createElement("input");
+  inp.className="xy"; inp.type="number"; inp.step=step||"0.01"; inp.value=val;
+  inp.oninput=()=>on(inp.value);
+  inp.onclick=e=>e.stopPropagation();
+  td.append(inp); return td;
+}
+function selCell(kinds,cur,on){
+  const td=document.createElement("td"); const s=document.createElement("select");
+  kinds.forEach(k=>{ const o=document.createElement("option");
+    o.value=k; o.textContent=k; s.append(o); });
+  s.value=cur; s.onchange=()=>on(s.value); s.onclick=e=>e.stopPropagation();
+  td.append(s); return td;
+}
+function delCell(onDel){
+  const td=document.createElement("td"); const b=document.createElement("button");
+  b.className="danger"; b.textContent="✕";
+  b.onclick=e=>{ e.stopPropagation(); onDel(); };
+  td.append(b); return td;
+}
+function emptyRow(t,cols,msg){
+  const tr=document.createElement("tr");
+  tr.innerHTML='<td colspan="'+cols+'" style="color:var(--muted);padding:12px 5px">'+msg+'</td>';
+  t.append(tr);
+}
+
+function renderWpTable(){
+  const t=$("wpTbl");
+  t.innerHTML="<tr><th></th><th>Name</th><th>x</th><th>y</th><th>θ°</th><th>Kind</th><th></th></tr>";
+  if(!S.wps.length){ emptyRow(t,7,"Drag a Start / Via chip onto the court."); return; }
+  S.wps.forEach((w,i)=>{
+    const tr=document.createElement("tr");
+    if(isSel("wp",w.id)) tr.className="sel";
+    tr.onclick=()=>{ S.sel=selKey("wp",w.id); render(); };
+    tr.innerHTML='<td class="n">'+(i+1)+'</td>';
+    const tdN=document.createElement("td"); const inp=document.createElement("input");
+    inp.value=w.name; inp.oninput=()=>{ w.name=inp.value; save(); renderMap(); renderCode(); };
+    inp.onclick=e=>e.stopPropagation(); tdN.append(inp); tr.append(tdN);
+    tr.append(numCell(r2(w.x),v=>{ w.x=clamp(+v||0,0,S.W); save(); render(); }));
+    tr.append(numCell(r2(w.y),v=>{ w.y=clamp(+v||0,0,S.H); save(); render(); }));
+    tr.append(numCell(w.th,v=>{ w.th=+v||0; save(); render(); },"1"));
+    tr.append(selCell(Object.keys(WPKINDS),w.kind,v=>{ w.kind=v; save(); render(); }));
+    const tdX=document.createElement("td");
+    const up=document.createElement("button"); up.textContent="↑";
+    up.onclick=e=>{ e.stopPropagation(); if(i>0){ const a=S.wps;
+      [a[i-1],a[i]]=[a[i],a[i-1]]; save(); render(); } };
+    const del=document.createElement("button"); del.className="danger"; del.textContent="✕";
+    del.onclick=e=>{ e.stopPropagation(); S.wps.splice(i,1); S.sel=null; save(); render(); };
+    tdX.append(up,del); tr.append(tdX);
+    t.append(tr);
+  });
+}
+
+function renderWallTable(){
+  const t=$("wallTbl");
+  t.innerHTML="<tr><th>Kind</th><th>x1</th><th>y1</th><th>x2</th><th>y2</th><th>thick</th><th></th></tr>";
+  if(!S.walls.length){ emptyRow(t,7,"Drag a Wall chip onto the court."); return; }
+  S.walls.forEach((w,i)=>{
+    const tr=document.createElement("tr");
+    if(isSel("wall",w.id)) tr.className="sel";
+    tr.onclick=()=>{ S.sel=selKey("wall",w.id); render(); };
+    tr.append(selCell(Object.keys(WALLKINDS),w.kind,v=>{
+      w.kind=v; w.thick=WTHICK[v]||w.thick; save(); render(); }));
+    tr.append(numCell(r2(w.x1),v=>{ w.x1=clamp(+v||0,0,S.W); save(); render(); }));
+    tr.append(numCell(r2(w.y1),v=>{ w.y1=clamp(+v||0,0,S.H); save(); render(); }));
+    tr.append(numCell(r2(w.x2),v=>{ w.x2=clamp(+v||0,0,S.W); save(); render(); }));
+    tr.append(numCell(r2(w.y2),v=>{ w.y2=clamp(+v||0,0,S.H); save(); render(); }));
+    tr.append(numCell(r2(w.thick),v=>{ w.thick=Math.max(0.01,+v||0.05); save(); render(); }));
+    tr.append(delCell(()=>{ S.walls.splice(i,1); S.sel=null; save(); render(); }));
+    t.append(tr);
+  });
+}
+
+function renderRectTable(){
+  const t=$("rectTbl");
+  t.innerHTML="<tr><th>Kind</th><th>x</th><th>y</th><th>w</th><th>h</th><th>pass</th><th></th></tr>";
+  if(!S.rects.length){ emptyRow(t,7,"Drag a Ramp / Zone chip onto the court."); return; }
+  S.rects.forEach((r,i)=>{
+    const tr=document.createElement("tr");
+    if(isSel("rect",r.id)) tr.className="sel";
+    tr.onclick=()=>{ S.sel=selKey("rect",r.id); render(); };
+    tr.append(selCell(Object.keys(RECTKINDS),r.kind,v=>{
+      r.kind=v; r.passable=!!PASSABLE_DEFAULT[v]; save(); render(); }));
+    tr.append(numCell(r2(r.x),v=>{ r.x=clamp(+v||0,0,S.W-r.w); save(); render(); }));
+    tr.append(numCell(r2(r.y),v=>{ r.y=clamp(+v||0,0,S.H-r.h); save(); render(); }));
+    tr.append(numCell(r2(r.w),v=>{ r.w=Math.max(0.05,+v||0.05); save(); render(); }));
+    tr.append(numCell(r2(r.h),v=>{ r.h=Math.max(0.05,+v||0.05); save(); render(); }));
+    const tdP=document.createElement("td"); const cb=document.createElement("input");
+    cb.type="checkbox"; cb.checked=!!r.passable; cb.style.width="auto";
+    cb.onchange=()=>{ r.passable=cb.checked; save(); render(); };
+    cb.onclick=e=>e.stopPropagation(); tdP.append(cb); tr.append(tdP);
+    tr.append(delCell(()=>{ S.rects.splice(i,1); S.sel=null; save(); render(); }));
+    t.append(tr);
+  });
+}
+
+function renderStats(){
+  let total=0, mx=null;
+  for(let i=1;i<S.wps.length;i++){
+    const d=dist(S.wps[i-1],S.wps[i]); total+=d;
+    if(!mx||d>mx.d) mx={a:S.wps[i-1],b:S.wps[i],d};
+  }
+  $("sCount").textContent=S.wps.length;
+  $("sLen").textContent=total.toFixed(2)+" m";
+  $("sMax").textContent=mx?(mx.a.name+" → "+mx.b.name+"  "+mx.d.toFixed(2)+" m"):"—";
+
+  const iss=clearanceIssues(), n=$("fitNote");
+  if(iss.length){
+    const w=iss.reduce((m,x)=>x.gap<m.gap?x:m);
+    n.style.color="var(--err)";
+    n.textContent="⚠ "+iss.length+" leg"+(iss.length>1?"s":"")+
+      " too close to an obstacle. Worst: "+w.a.name+" → "+w.b.name+
+      " clears the "+w.kind+" by "+(w.gap*1000).toFixed(0)+" mm, needs "+
+      (w.need*1000).toFixed(0)+" mm.";
+  } else if(S.wps.length>1){
+    n.style.color="var(--ok)";
+    n.textContent="Route clears every blocking obstacle by at least half the robot width.";
+  } else n.textContent="";
+}
+
+/* ---------------------------- export ---------------------------- */
+function banner(c){
+  return [c+" Field map — ESC2026 Skill 23",
+          c+" Court "+S.W+" x "+S.H+" m. Frame: origin bottom-left, +x along",
+          c+" length, +y across width, theta 0 = +x CCW (ROS REP-103).",
+          c+" Units: METRES and DEGREES.",""].join("\n");
+}
+function genYaml(){
+  const L=[banner("#")];
+  L.push("field:","  width: "+S.W,"  height: "+S.H,"","waypoints:");
+  if(!S.wps.length) L.push("  {}");
+  S.wps.forEach(w=>L.push("  "+ident(w.name)+":","    x: "+r2(w.x).toFixed(3),
+    "    y: "+r2(w.y).toFixed(3),"    theta_deg: "+(+w.th).toFixed(1),
+    "    kind: "+w.kind));
+  L.push("","route: ["+S.wps.map(w=>ident(w.name)).join(", ")+"]");
+  L.push("","# thick is the FOOTPRINT to drive around, in metres - not height.",
+         "walls:");
+  if(!S.walls.length) L.push("  []");
+  S.walls.forEach(w=>L.push("  - name: "+ident(w.name),"    kind: "+w.kind,
+    "    x1: "+r2(w.x1).toFixed(3),"    y1: "+r2(w.y1).toFixed(3),
+    "    x2: "+r2(w.x2).toFixed(3),"    y2: "+r2(w.y2).toFixed(3),
+    "    thick: "+r2(w.thick).toFixed(3)));
+  L.push("","# passable areas may be driven over and are ignored for clearance.",
+         "areas:");
+  if(!S.rects.length) L.push("  []");
+  S.rects.forEach(r=>L.push("  - name: "+ident(r.name),"    kind: "+r.kind,
+    "    x: "+r2(r.x).toFixed(3),"    y: "+r2(r.y).toFixed(3),
+    "    w: "+r2(r.w).toFixed(3),"    h: "+r2(r.h).toFixed(3),
+    "    passable: "+(!!r.passable)));
+  return L.join("\n");
+}
+function genPy(){
+  const L=[banner("#")];
+  L.push("import math","","FIELD_W = "+S.W,"FIELD_H = "+S.H,"","",
+    "class WP:",
+    '    """A pose on the court. theta is stored in radians."""',
+    '    __slots__ = ("name", "x", "y", "theta", "kind")',"",
+    "    def __init__(self, name, x, y, theta_deg, kind):",
+    "        self.name = name","        self.x = x","        self.y = y",
+    "        self.theta = math.radians(theta_deg)","        self.kind = kind","",
+    "    def __repr__(self):",
+    '        return f"WP({self.name} {self.x:.2f},{self.y:.2f})"',"","",
+    "WAYPOINTS = {");
+  S.wps.forEach(w=>L.push('    "'+ident(w.name)+'": WP("'+ident(w.name)+'", '+
+    r2(w.x).toFixed(3)+", "+r2(w.y).toFixed(3)+", "+(+w.th).toFixed(1)+', "'+w.kind+'"),'));
+  L.push("}","","ROUTE = ["+S.wps.map(w=>'"'+ident(w.name)+'"').join(", ")+"]");
+
+  L.push("","","class Wall:",
+    '    """An obstacle footprint: a segment with a width.',"",
+    "    thick is the footprint to drive around, in metres - NOT the height.",
+    '    """',
+    '    __slots__ = ("name", "kind", "x1", "y1", "x2", "y2", "thick")',"",
+    "    def __init__(self, name, kind, x1, y1, x2, y2, thick):",
+    "        self.name, self.kind = name, kind",
+    "        self.x1, self.y1 = x1, y1","        self.x2, self.y2 = x2, y2",
+    "        self.thick = thick","",
+    "    def distance_to(self, px, py):",
+    '        """Clearance from (px, py). Negative means inside the footprint."""',
+    "        dx, dy = self.x2 - self.x1, self.y2 - self.y1",
+    "        L2 = dx * dx + dy * dy",
+    "        t = ((px - self.x1) * dx + (py - self.y1) * dy) / L2 if L2 > 1e-12 else 0.0",
+    "        t = max(0.0, min(1.0, t))",
+    "        d = math.hypot(px - (self.x1 + t * dx), py - (self.y1 + t * dy))",
+    "        return d - self.thick / 2.0","","",
+    "class Area:",
+    '    """An axis-aligned rectangle. passable areas may be driven over."""',
+    '    __slots__ = ("name", "kind", "x", "y", "w", "h", "passable")',"",
+    "    def __init__(self, name, kind, x, y, w, h, passable):",
+    "        self.name, self.kind = name, kind",
+    "        self.x, self.y = x, y","        self.w, self.h = w, h",
+    "        self.passable = passable","",
+    "    def contains(self, px, py):",
+    "        return self.x <= px <= self.x + self.w and self.y <= py <= self.y + self.h","",
+    "    def distance_to(self, px, py):",
+    '        """0.0 inside, else the distance to the nearest edge."""',
+    "        dx = max(self.x - px, 0.0, px - (self.x + self.w))",
+    "        dy = max(self.y - py, 0.0, py - (self.y + self.h))",
+    "        return math.hypot(dx, dy)","","",
+    "WALLS = [");
+  S.walls.forEach(w=>L.push('    Wall("'+ident(w.name)+'", "'+w.kind+'", '+
+    r2(w.x1).toFixed(3)+", "+r2(w.y1).toFixed(3)+", "+r2(w.x2).toFixed(3)+", "+
+    r2(w.y2).toFixed(3)+", "+r2(w.thick).toFixed(3)+"),"));
+  L.push("]","","AREAS = [");
+  S.rects.forEach(r=>L.push('    Area("'+ident(r.name)+'", "'+r.kind+'", '+
+    r2(r.x).toFixed(3)+", "+r2(r.y).toFixed(3)+", "+r2(r.w).toFixed(3)+", "+
+    r2(r.h).toFixed(3)+", "+(r.passable?"True":"False")+"),"));
+  L.push("]","","",
+    "def clearance(px, py):",
+    '    """Distance to the nearest BLOCKING obstacle, in metres.',"",
+    "    Passable areas (ramps, platforms) are excluded. Compare against half",
+    "    your robot width before committing to a move.",
+    '    """',
+    "    d = [w.distance_to(px, py) for w in WALLS]",
+    "    d += [a.distance_to(px, py) for a in AREAS if not a.passable]",
+    '    return min(d, default=float("inf"))',"","",
+    "def leg_lengths():",
+    '    """Distance between consecutive ROUTE entries, in metres."""',
+    "    out = []",
+    "    for a, b in zip(ROUTE, ROUTE[1:]):",
+    "        p, q = WAYPOINTS[a], WAYPOINTS[b]",
+    "        out.append(math.hypot(q.x - p.x, q.y - p.y))",
+    "    return out");
+  return L.join("\n");
+}
+const GEN={yaml:{label:"YAML",fn:genYaml},py:{label:"Python",fn:genPy}};
+
+function renderCode(){
+  const tb=$("tabs"); tb.innerHTML="";
+  Object.entries(GEN).forEach(([k,g])=>{
+    const b=document.createElement("button"); b.textContent=g.label;
+    if(k===lang) b.className="on";
+    b.onclick=()=>{ lang=k; renderCode(); }; tb.append(b);
+  });
+  $("code").textContent=GEN[lang].fn();
+}
+
+function render(){ save(); renderMap(); renderWpTable(); renderWallTable();
+  renderRectTable(); renderStats(); renderCode(); }
+
+/* ---------------------------- wiring ---------------------------- */
+$("preset").onchange=e=>{ const parts=e.target.value.split(",").map(Number);
+  S.H=parts[0]; S.W=parts[1];
+  S.wps.forEach(o=>{ o.x=clamp(o.x,0,S.W); o.y=clamp(o.y,0,S.H); });
+  S.walls.forEach(o=>{ o.x1=clamp(o.x1,0,S.W); o.x2=clamp(o.x2,0,S.W);
+    o.y1=clamp(o.y1,0,S.H); o.y2=clamp(o.y2,0,S.H); });
+  S.rects.forEach(o=>{ o.w=Math.min(o.w,S.W); o.h=Math.min(o.h,S.H);
+    o.x=clamp(o.x,0,S.W-o.w); o.y=clamp(o.y,0,S.H-o.h); });
+  render(); };
+$("snap").onchange=e=>{ S.snap=+e.target.value; save(); };
+$("fp").oninput=e=>{ S.fp=+e.target.value||600; render(); };
+$("showFp").onchange=e=>{ S.showFp=e.target.checked; render(); };
+$("clearBtn").onclick=()=>{ if(confirm("Delete every waypoint, wall and area?")){
+  S.wps=[]; S.walls=[]; S.rects=[]; S.sel=null; ids={wp:1,wall:1,rect:1}; render(); } };
+$("copyBtn").onclick=()=>{ const t=GEN[lang].fn();
+  navigator.clipboard&&navigator.clipboard.writeText(t).then(
+    ()=>{ $("copyBtn").textContent="Copied";
+      setTimeout(()=>$("copyBtn").textContent="Copy to clipboard",1200); },
+    ()=>alert("Clipboard blocked — select and copy manually.")); };
+$("exportBtn").onclick=()=>{
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="fieldmap.json"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000); };
+$("importBtn").onclick=()=>$("fileIn").click();
+$("fileIn").onchange=e=>{ const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ const s=JSON.parse(r.result);
+      if(!s||!Array.isArray(s.wps)) throw 0;
+      S=Object.assign(S,s);
+      for(const k of ["wps","walls","rects"]) if(!Array.isArray(S[k])) S[k]=[];
+      ids.wp=Math.max(0,...S.wps.map(o=>o.id||0))+1;
+      ids.wall=Math.max(0,...S.walls.map(o=>o.id||0))+1;
+      ids.rect=Math.max(0,...S.rects.map(o=>o.id||0))+1;
+      S.sel=null; render();
+    }catch(_){ alert("Not a field map file."); } };
+  r.readAsText(f); e.target.value=""; };
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){ S.sel=null; render(); return; }
+  if(e.key!=="Delete"||!S.sel) return;
+  const ae=document.activeElement;
+  if(ae&&["INPUT","SELECT","TEXTAREA"].indexOf(ae.tagName)>=0) return;
+  const parts=S.sel.split(":"), t=parts[0], id=+parts[1];
+  const arr = t==="wp"?S.wps : t==="wall"?S.walls : S.rects;
+  const i=arr.findIndex(o=>o.id===id);
+  if(i>=0) arr.splice(i,1);
+  S.sel=null; render();
+});
+
+load();
+$("preset").value=S.H+","+S.W;
+$("snap").value=String(S.snap);
+$("fp").value=S.fp; $("showFp").checked=S.showFp;
+if(!S.wps.length && !S.walls.length && !S.rects.length){
+  addWp(0.5,0.5,"start");    S.wps[0].name="start";
+  addWp(2.0,3.1,"shelf");    S.wps[1].name="shelfA";    S.wps[1].th=90;
+  addWp(6.0,1.0,"delivery"); S.wps[2].name="delivery1";
+  addWall(2.0,3.6,"shelf");  S.walls[0].name="shelfFace";
+  S.walls[0].x1=1.4; S.walls[0].x2=2.65; S.walls[0].y1=3.6; S.walls[0].y2=3.6;
+  addRect(4.6,2.65,"ramp");  S.rects[0].name="ramp";
+  S.rects[0].x=4.0; S.rects[0].y=2.2; S.rects[0].w=1.2; S.rects[0].h=0.9;
+}
+buildPalette();
+S.sel=null;
+render();
+</script>
+<script id="hubnav-js">
+/* Keep the shared robot address up to date and carry it on every menu link. */
+(function(){
+  var K="studica.robot", H=["host","rHost"], P=["port","rPort"];
+  function el(ids){ for(var i=0;i<ids.length;i++){ var e=document.getElementById(ids[i]); if(e) return e; } return null; }
+  function cur(){
+    var h=el(H), p=el(P), r=null;
+    try{ r=JSON.parse(localStorage.getItem(K)||"null"); }catch(e){}
+    return { host:(h&&h.value.trim())||(r&&r.host)||"", port:(p&&p.value.trim())||(r&&r.port)||"5800" };
+  }
+  function store(){ var c=cur(); if(c.host){ try{ localStorage.setItem(K,JSON.stringify(c)); }catch(e){} } }
+  [el(H),el(P)].forEach(function(e){ if(e){ e.addEventListener("input",store); e.addEventListener("change",store); } });
+  store();
+  document.querySelectorAll('#hubnav a').forEach(function(a){
+    a.addEventListener("click",function(){ var c=cur(); if(!c.host) return;
+      var base=a.getAttribute("href").split("?")[0];
+      a.href=base+"?host="+encodeURIComponent(c.host)+"&port="+encodeURIComponent(c.port); });
+  });
+})();
+</script>
+</body>
+</html>

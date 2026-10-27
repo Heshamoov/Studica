@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camera &amp; Detections</title>
+<!--
+  ESC2026 Skill 23 - live camera + box detection monitor.
+
+  WHAT THIS IS
+  A VIEWER. All detection happens in robot/vision/detector.py on the robot;
+  this page only displays what the robot reports. That split is deliberate:
+  re-implementing the detector in JavaScript would give you two versions to
+  keep in step, and they would drift. One implementation, one place to fix.
+
+  SCHEMA (matches Detection.as_dict() in detector.py)
+    {colour, u, v, w_px, h_px, range_m, bearing_rad, bearing_deg,
+     source, area_px}
+  plus a pose  {x, y, theta}  in the field frame.
+
+  FRAME (ROS REP-103, as everywhere else in this project)
+    robot  +x forward, +y LEFT, theta CCW
+    field  origin bottom-left, +x along length, +y across width
+
+  LIVE DATA needs rosbridge_server on the VMX:
+    ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+    -> ws://10.12.34.2:9090
+  Install it BEFORE you travel; CID 4.2 forbids internet on site.
+  Demo mode works with no robot at all, so the display can be checked and
+  practised on today.
+
+  SELF-CONTAINED. No CDN.
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#14171c; --muted:#5b6472; --line:#dde1e8;
+  --accent:#1f6feb; --ok:#127a3e; --warn:#a15c00; --err:#c0281c;
+  --okbg:#e7f5ec; --warnbg:#fdf3e2; --errbg:#fdeceb; --chip:#eef1f6;
+  --red:#d33a2c; --green:#2e9e4f; --blue:#2f6fd0; --field:#eceff4; --grid:#c8cfd9;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+    --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+    --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+    --red:#ff6b5e; --green:#4ec98a; --blue:#5b9dff; --field:#12161c; --grid:#2b323d;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+  --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+  --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+  --red:#ff6b5e; --green:#4ec98a; --blue:#5b9dff; --field:#12161c; --grid:#2b323d;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;
+  background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
+h1{font-size:15px;margin:0;font-weight:650}
+h1 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.grow{flex:1}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:7px;
+  padding:6px 11px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+input{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:5px 8px;min-width:0}
+.conn{font-size:11px;padding:3px 9px;border-radius:20px;background:var(--chip);color:var(--muted)}
+.conn.on{background:var(--okbg);color:var(--ok)}
+.conn.demo{background:var(--warnbg);color:var(--warn)}
+main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;
+  padding:14px;align-items:start}
+@media(max-width:980px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:13px 15px;margin-bottom:14px}
+.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  margin:0 0 10px;display:flex;gap:8px;align-items:center}
+canvas{width:100%;height:auto;display:block;border-radius:8px;border:1px solid var(--line);
+  background:#0b0d10}
+canvas#mini{background:var(--field)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+td.m{font-family:var(--mono)}
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;
+  vertical-align:-1px}
+.sw.red{background:var(--red)} .sw.green{background:var(--green)} .sw.blue{background:var(--blue)}
+.src{font-size:10px;padding:1px 6px;border-radius:20px;background:var(--chip);color:var(--muted)}
+.src.depth{background:var(--okbg);color:var(--ok)}
+.tiles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+.tile b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);font-weight:600}
+.tile span{font-family:var(--mono);font-size:16px}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+code{font-family:var(--mono);background:var(--chip);padding:1px 5px;border-radius:4px}
+.empty{color:var(--muted);padding:14px;text-align:center}
+</style>
+
+<style id="hubnav-css">#hubnav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:5px 12px;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--chip,#eef1f6);border-bottom:1px solid var(--line,#dde1e8)}#hubnav a{color:var(--muted,#5b6472);text-decoration:none;padding:2px 9px;border-radius:6px}#hubnav a:hover{background:var(--panel,#fff);color:var(--ink,#14171c)}#hubnav a.here{background:var(--accent,#1f6feb);color:#fff}#hubnav b{margin-right:6px;color:var(--ink,#14171c);font-weight:650}</style>
+<script id="hubnav-head">
+/* ONE robot address for every page. Typed on any page, it is saved here and
+   every other page opens with it (added to the address bar as ?host=&port=). */
+(function(){try{
+  var q=new URLSearchParams(location.search), K="studica.robot";
+  var r=JSON.parse(localStorage.getItem(K)||"null");
+  if(q.get("host")){ localStorage.setItem(K,JSON.stringify({host:q.get("host"),port:q.get("port")||"5800"})); }
+  else if(r&&r.host){ q.set("host",r.host); q.set("port",r.port||"5800");
+    location.replace(location.pathname+"?"+q.toString()+location.hash); }
+}catch(e){}})();
+</script>
+</head>
+<body>
+<nav id="hubnav"><b>SC2026</b><a href="../index.html">Workbench</a><a href="../BEGINNER-GUIDE.html">1 Beginner guide</a><a href="../tools/portplanner.html">2 Port planner</a><a href="../tools/settings.html">3 Robot settings</a><a href="../tools/controlpanel.html">4 Control panel</a><a href="../tools/fieldmap.html">5 Field map</a><a href="../tools/runconsole.html">Run console (old brief)</a><a href="../tools/camview.html" class="here">Camera (old brief)</a></nav>
+
+
+
+<header>
+  <h1>Camera &amp; Detections <small>ESC2026 &middot; Skill 23 &middot; Module G</small></h1>
+  <span class="grow"></span>
+  <input id="url" value="ws://10.12.34.2:9090" style="width:180px">
+  <button id="connBtn">Connect</button>
+  <button id="demoBtn" class="on">Demo</button>
+  <button id="mapBtn">Load field map</button>
+  <input type="file" id="mapFile" accept=".json" hidden>
+  <span class="conn demo" id="conn">Demo — no robot</span>
+</header>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2>Camera <span class="conn" id="fps">—</span></h2>
+      <canvas id="cam" width="640" height="480"></canvas>
+      <p class="note">Boxes are outlined by the robot's own detector
+      (<code>robot/vision/detector.py</code>). The vertical line is the camera
+      axis: a box left of it has <b>positive</b> bearing and positive robot
+      <b>y</b>. Ranges tagged <span class="src depth">depth</span> come from
+      the RealSense; <span class="src">size</span> means it fell back to the
+      known 60&nbsp;mm box width.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Robot</h2>
+      <div class="tiles">
+        <div class="tile"><b>Field x</b><span id="rx">—</span></div>
+        <div class="tile"><b>Field y</b><span id="ry">—</span></div>
+        <div class="tile"><b>Heading</b><span id="rt">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="panel">
+      <h2>Detections <span class="conn" id="ndet">0</span></h2>
+      <table id="tbl"></table>
+    </div>
+
+    <div class="panel">
+      <h2>Where they are</h2>
+      <canvas id="mini" width="640" height="340"></canvas>
+      <p class="note">Detections projected into the field frame using the
+      robot's pose. A detection is only as good as the pose it is transformed
+      through — if odometry has drifted, these land in the wrong place even
+      when the camera is perfectly right.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// Court size comes from tools/fieldmap.html so the two tools agree. It is
+// read from shared browser storage when available, and can always be loaded
+// from an exported fieldmap.json - browsers differ on whether file:// pages
+// share localStorage, so the button is the reliable path.
+let FIELD={W:8,H:4}, MAPOBJ={walls:[],rects:[]};
+function adoptMap(m){
+  if(!m) return false;
+  if(typeof m.W==="number") FIELD.W=m.W;
+  if(typeof m.H==="number") FIELD.H=m.H;
+  MAPOBJ.walls=Array.isArray(m.walls)?m.walls:[];
+  MAPOBJ.rects=Array.isArray(m.rects)?m.rects:[];
+  return true;
+}
+try{
+  const raw=localStorage.getItem("studica.fieldmap.v2");
+  if(raw) adoptMap(JSON.parse(raw));
+}catch(e){}
+const COL={red:"#d33a2c",green:"#2e9e4f",blue:"#2f6fd0"};
+const $=id=>document.getElementById(id);
+
+let demo=true, ws=null, frameCount=0, lastFpsAt=performance.now(), fps=0;
+let state={ pose:{x:0.8,y:2.0,theta:0}, dets:[], img:null, cam:{width:640,height:480,fx:615} };
+
+/* ------------------------------ bridge ------------------------------
+   The ONLY place that touches the robot. rosbridge_server speaks JSON
+   over a websocket, so no library is needed - which matters, because a
+   CDN import would break the no-internet rule.
+--------------------------------------------------------------------- */
+function connect(url){
+  try{ ws=new WebSocket(url); }
+  catch(e){ setConn("err","Bad URL"); return; }
+  setConn("","Connecting…");
+  ws.onopen=()=>{
+    demo=false; $("demoBtn").className="";
+    setConn("on","Connected");
+    // subscribe to whatever the robot-side node publishes
+    [["/detections","std_msgs/String"],
+     ["/odom_pose","std_msgs/String"],
+     ["/camera/compressed","sensor_msgs/CompressedImage"]].forEach(([topic,type])=>{
+      ws.send(JSON.stringify({op:"subscribe",topic,type}));
+    });
+  };
+  ws.onmessage=ev=>{
+    let m; try{ m=JSON.parse(ev.data); }catch(_){ return; }
+    if(m.op!=="publish") return;
+    if(m.topic==="/detections"){
+      try{ state.dets=JSON.parse(m.msg.data)||[]; }catch(_){ }
+    } else if(m.topic==="/odom_pose"){
+      try{ Object.assign(state.pose, JSON.parse(m.msg.data)); }catch(_){ }
+    } else if(m.topic==="/camera/compressed"){
+      const im=new Image();
+      im.onload=()=>{ state.img=im; };
+      im.src="data:image/jpeg;base64,"+m.msg.data;
+    }
+  };
+  ws.onerror=()=>setConn("err","Connection failed");
+  ws.onclose=()=>{ if(!demo) setConn("err","Disconnected"); ws=null; };
+}
+function setConn(cls,txt){ const c=$("conn"); c.className="conn "+cls; c.textContent=txt; }
+
+/* ------------------------------- demo -------------------------------
+   Emits payloads in exactly the schema the robot sends, so this exercises
+   the real display path rather than a parallel one. It does NOT re-implement
+   detection - see the header.
+--------------------------------------------------------------------- */
+const DEMO_BOXES=[  // field-frame truth the fake robot "sees"
+  {colour:"red",   x:3.4, y:3.30},
+  {colour:"green", x:4.2, y:1.05},
+  {colour:"blue",  x:5.6, y:2.55},
+];
+function demoTick(t){
+  // robot drives a slow lap, scaled to whatever court is loaded
+  const cx=FIELD.W/2, cy=FIELD.H/2, rx=FIELD.W*0.30, ry=FIELD.H*0.28, w=0.22;
+  const px=cx+rx*Math.cos(w*t), py=cy+ry*Math.sin(w*t);
+  const vx=-rx*w*Math.sin(w*t), vy=ry*w*Math.cos(w*t);
+  state.pose={x:px,y:py,theta:Math.atan2(vy,vx)};
+
+  const cam=state.cam, out=[];
+  DEMO_BOXES.forEach(b=>{
+    // field -> robot frame
+    const dx=b.x-px, dy=b.y-py;
+    const c=Math.cos(-state.pose.theta), s=Math.sin(-state.pose.theta);
+    const bx=dx*c-dy*s, by=dx*s+dy*c;
+    if(bx<=0.25) return;                       // behind or too close
+    const bearing=Math.atan2(by,bx);
+    if(Math.abs(bearing)>0.55) return;         // outside a ~63 deg FOV
+    const range=Math.hypot(bx,by);
+    const w_px=Math.round(0.060*cam.fx/range);
+    const h_px=Math.round(0.150*cam.fx/range);
+    const u=Math.round(cam.width/2 - Math.tan(bearing)*cam.fx);
+    const v=Math.round(cam.height/2 + 26/range);
+    out.push({colour:b.colour,u,v,w_px,h_px,
+      range_m:Math.round(range*1000)/1000,
+      bearing_rad:bearing, bearing_deg:Math.round(bearing*180/Math.PI*100)/100,
+      source: range<1.6 ? "depth" : "size",
+      area_px:w_px*h_px});
+  });
+  out.sort((a,b)=>a.range_m-b.range_m);
+  state.dets=out;
+}
+
+/* ------------------------------ drawing ------------------------------ */
+function drawCam(){
+  const cv=$("cam"), g=cv.getContext("2d");
+  const W=cv.width, H=cv.height;
+  g.clearRect(0,0,W,H);
+
+  if(state.img){
+    g.drawImage(state.img,0,0,W,H);
+  } else {
+    // a plain backdrop with a horizon, so overlays are legible in demo mode
+    const grad=g.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,"#151a21"); grad.addColorStop(1,"#0b0d10");
+    g.fillStyle=grad; g.fillRect(0,0,W,H);
+    g.strokeStyle="#232a33"; g.lineWidth=1;
+    for(let i=1;i<8;i++){ const y=H*0.55+i*i*2.4;
+      if(y<H){ g.beginPath(); g.moveTo(0,y); g.lineTo(W,y); g.stroke(); } }
+    g.fillStyle="#39424e"; g.font="13px system-ui";
+    g.fillText("no video — demo overlay", 12, H-12);
+  }
+
+  // camera axis
+  g.strokeStyle="rgba(255,255,255,.35)"; g.lineWidth=1;
+  g.setLineDash([5,5]); g.beginPath(); g.moveTo(W/2,0); g.lineTo(W/2,H); g.stroke();
+  g.setLineDash([]);
+
+  state.dets.forEach(d=>{
+    const col=COL[d.colour]||"#ccc";
+    const x=d.u-d.w_px/2, y=d.v-d.h_px/2;
+    g.fillStyle=col+"33"; g.fillRect(x,y,d.w_px,d.h_px);
+    g.strokeStyle=col; g.lineWidth=2.5; g.strokeRect(x,y,d.w_px,d.h_px);
+    g.beginPath(); g.moveTo(d.u-7,d.v); g.lineTo(d.u+7,d.v);
+    g.moveTo(d.u,d.v-7); g.lineTo(d.u,d.v+7); g.stroke();
+
+    const lab=d.colour+"  "+d.range_m.toFixed(2)+" m  "+
+      (d.bearing_deg>=0?"+":"")+d.bearing_deg.toFixed(0)+"°";
+    g.font="600 13px system-ui";
+    const tw=g.measureText(lab).width;
+    const ty=Math.max(16,y-8);
+    g.fillStyle="rgba(0,0,0,.65)"; g.fillRect(x-2,ty-14,tw+10,18);
+    g.fillStyle=col; g.fillText(lab,x+3,ty);
+  });
+}
+
+function drawMini(){
+  const cv=$("mini"), g=cv.getContext("2d");
+  const W=cv.width, H=cv.height, pad=26;
+  const sc=Math.min((W-pad*2)/FIELD.W,(H-pad*2)/FIELD.H);
+  const ox=(W-FIELD.W*sc)/2, oy=(H-FIELD.H*sc)/2;
+  const X=x=>ox+x*sc, Y=y=>oy+(FIELD.H-y)*sc;
+
+  g.clearRect(0,0,W,H);
+  g.fillStyle=getComputedStyle(document.body).getPropertyValue("--field");
+  g.fillRect(0,0,W,H);
+  g.strokeStyle=getComputedStyle(document.body).getPropertyValue("--grid");
+  g.lineWidth=1;
+  for(let x=0;x<=FIELD.W;x++){ g.beginPath(); g.moveTo(X(x),Y(0)); g.lineTo(X(x),Y(FIELD.H)); g.stroke(); }
+  for(let y=0;y<=FIELD.H;y++){ g.beginPath(); g.moveTo(X(0),Y(y)); g.lineTo(X(FIELD.W),Y(y)); g.stroke(); }
+  g.strokeStyle=getComputedStyle(document.body).getPropertyValue("--ink");
+  g.lineWidth=1.5; g.strokeRect(X(0),Y(FIELD.H),FIELD.W*sc,FIELD.H*sc);
+
+  // obstacles from the field map, so detections are seen in context
+  MAPOBJ.rects.forEach(r=>{
+    g.fillStyle = r.passable ? "rgba(139,92,246,.13)" : "rgba(120,130,145,.28)";
+    g.fillRect(X(r.x), Y(r.y+r.h), r.w*sc, r.h*sc);
+  });
+  g.lineCap="round";
+  MAPOBJ.walls.forEach(w=>{
+    g.strokeStyle="rgba(120,130,145,.75)";
+    g.lineWidth=Math.max(2,(w.thick||0.05)*sc);
+    g.beginPath(); g.moveTo(X(w.x1),Y(w.y1)); g.lineTo(X(w.x2),Y(w.y2)); g.stroke();
+  });
+  g.lineCap="butt";
+
+  const p=state.pose;
+  // field-of-view wedge, so it is obvious what the robot can and cannot see
+  g.fillStyle="rgba(91,157,255,.13)";
+  g.beginPath(); g.moveTo(X(p.x),Y(p.y));
+  for(let a=-0.55;a<=0.551;a+=0.05){
+    const th=p.theta+a;
+    g.lineTo(X(p.x+3.2*Math.cos(th)),Y(p.y+3.2*Math.sin(th)));
+  }
+  g.closePath(); g.fill();
+
+  state.dets.forEach(d=>{
+    const c=Math.cos(p.theta), s=Math.sin(p.theta);
+    const bx=d.range_m*Math.cos(d.bearing_rad), by=d.range_m*Math.sin(d.bearing_rad);
+    const fx=p.x+bx*c-by*s, fy=p.y+bx*s+by*c;
+    g.fillStyle=COL[d.colour]||"#ccc";
+    g.beginPath(); g.arc(X(fx),Y(fy),7,0,7); g.fill();
+    g.strokeStyle="rgba(128,128,128,.6)"; g.lineWidth=1;
+    g.beginPath(); g.moveTo(X(p.x),Y(p.y)); g.lineTo(X(fx),Y(fy)); g.stroke();
+    g.fillStyle=getComputedStyle(document.body).getPropertyValue("--ink");
+    g.font="600 11px system-ui";
+    g.fillText(fx.toFixed(2)+", "+fy.toFixed(2), X(fx)+10, Y(fy)-8);
+  });
+
+  // robot
+  g.fillStyle="#5b9dff";
+  g.beginPath(); g.arc(X(p.x),Y(p.y),8,0,7); g.fill();
+  g.strokeStyle="#5b9dff"; g.lineWidth=3;
+  g.beginPath(); g.moveTo(X(p.x),Y(p.y));
+  g.lineTo(X(p.x+0.45*Math.cos(p.theta)),Y(p.y+0.45*Math.sin(p.theta))); g.stroke();
+}
+
+function drawTable(){
+  const t=$("tbl");
+  t.innerHTML="<tr><th>Colour</th><th>Range</th><th>Bearing</th>"+
+              "<th>robot x,y</th><th>field x,y</th><th></th></tr>";
+  $("ndet").textContent=state.dets.length;
+  if(!state.dets.length){
+    const tr=document.createElement("tr");
+    tr.innerHTML='<td colspan="6" class="empty">Nothing in view.</td>';
+    t.append(tr); return;
+  }
+  const p=state.pose;
+  state.dets.forEach(d=>{
+    const bx=d.range_m*Math.cos(d.bearing_rad), by=d.range_m*Math.sin(d.bearing_rad);
+    const c=Math.cos(p.theta), s=Math.sin(p.theta);
+    const fx=p.x+bx*c-by*s, fy=p.y+bx*s+by*c;
+    const tr=document.createElement("tr");
+    tr.innerHTML=
+      '<td><span class="sw '+d.colour+'"></span>'+d.colour+'</td>'+
+      '<td class="m">'+d.range_m.toFixed(2)+' m</td>'+
+      '<td class="m">'+(d.bearing_deg>=0?"+":"")+d.bearing_deg.toFixed(1)+'°</td>'+
+      '<td class="m">'+bx.toFixed(2)+', '+by.toFixed(2)+'</td>'+
+      '<td class="m">'+fx.toFixed(2)+', '+fy.toFixed(2)+'</td>'+
+      '<td><span class="src '+(d.source==="depth"?"depth":"")+'">'+d.source+'</span></td>';
+    t.append(tr);
+  });
+}
+
+function drawPose(){
+  const p=state.pose;
+  $("rx").textContent=p.x.toFixed(2)+" m";
+  $("ry").textContent=p.y.toFixed(2)+" m";
+  $("rt").textContent=(p.theta*180/Math.PI).toFixed(0)+"°";
+}
+
+/* ------------------------------- loop ------------------------------- */
+let t0=performance.now();
+function loop(){
+  const now=performance.now();
+  if(demo) demoTick((now-t0)/1000);
+  drawCam(); drawMini(); drawTable(); drawPose();
+  frameCount++;
+  if(now-lastFpsAt>500){
+    fps=Math.round(frameCount*1000/(now-lastFpsAt));
+    frameCount=0; lastFpsAt=now;
+    $("fps").textContent=fps+" fps";
+  }
+  requestAnimationFrame(loop);
+}
+
+$("mapBtn").onclick=()=>$("mapFile").click();
+$("mapFile").onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+      if(!adoptMap(JSON.parse(r.result))) throw 0;
+      $("mapBtn").textContent=FIELD.W+"×"+FIELD.H+" m loaded";
+    }catch(_){ alert("Not a field map file."); } };
+  r.readAsText(f); e.target.value="";
+};
+$("connBtn").onclick=()=>connect($("url").value.trim());
+$("demoBtn").onclick=()=>{
+  demo=!demo;
+  $("demoBtn").className=demo?"on":"";
+  if(demo){ if(ws){ ws.close(); ws=null; } setConn("demo","Demo — no robot"); t0=performance.now(); }
+  else setConn("","Idle — press Connect");
+};
+loop();
+</script>
+<script id="hubnav-js">
+/* Keep the shared robot address up to date and carry it on every menu link. */
+(function(){
+  var K="studica.robot", H=["host","rHost"], P=["port","rPort"];
+  function el(ids){ for(var i=0;i<ids.length;i++){ var e=document.getElementById(ids[i]); if(e) return e; } return null; }
+  function cur(){
+    var h=el(H), p=el(P), r=null;
+    try{ r=JSON.parse(localStorage.getItem(K)||"null"); }catch(e){}
+    return { host:(h&&h.value.trim())||(r&&r.host)||"", port:(p&&p.value.trim())||(r&&r.port)||"5800" };
+  }
+  function store(){ var c=cur(); if(c.host){ try{ localStorage.setItem(K,JSON.stringify(c)); }catch(e){} } }
+  [el(H),el(P)].forEach(function(e){ if(e){ e.addEventListener("input",store); e.addEventListener("change",store); } });
+  store();
+  document.querySelectorAll('#hubnav a').forEach(function(a){
+    a.addEventListener("click",function(){ var c=cur(); if(!c.host) return;
+      var base=a.getAttribute("href").split("?")[0];
+      a.href=base+"?host="+encodeURIComponent(c.host)+"&port="+encodeURIComponent(c.port); });
+  });
+})();
+</script>
+</body>
+</html>

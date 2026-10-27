@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Run Console — Module G</title>
+<!--
+  ESC2026 Skill 23 - Module G run console.
+
+  WHY THIS EXISTS (CID references)
+    G.1  "The competitors will input the order in which the robot must
+          complete their tasks directly on their computers at the beginning
+          of the performance run." A dice roll picks the order minutes
+          before you run - you cannot recompile your way through that.
+    G.2.2 Run 2 step 2: "Competitor sends the order to the robot."
+    G.5  Run 2 uses a SURPRISE dispensary layout. One permitted way to
+          handle it is "Input the layout info in the code" - hence the
+          shelf layout grid here.
+    5.6.2 "marks will be deducted from the team's run for any adjustment.
+          Tele-op adjustments will have smaller deductions than manually
+          moving the robot." And 5.6.3: "teams will be required to announce
+          each interaction with the Experts." Hence the interaction log.
+    5.6.2 "The robot can rerun to get the highest score within 600 second."
+          Hence the 600 s window on the timer.
+
+  SELF-CONTAINED. No CDN, no framework. CID 4.2 forbids internet on site.
+  Works from file:// with the WiFi off.
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#14171c; --muted:#5b6472; --line:#dde1e8;
+  --accent:#1f6feb; --ok:#127a3e; --warn:#a15c00; --err:#c0281c;
+  --okbg:#e7f5ec; --warnbg:#fdf3e2; --errbg:#fdeceb; --chip:#eef1f6;
+  --red:#d33a2c; --green:#2e9e4f; --blue:#2f6fd0;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+    --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+    --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+    --red:#ff6b5e; --green:#4ec98a; --blue:#5b9dff;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+  --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+  --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+  --red:#ff6b5e; --green:#4ec98a; --blue:#5b9dff;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 16px;
+  background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
+h1{font-size:15px;margin:0;font-weight:650}
+h1 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.grow{flex:1}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:7px;
+  padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.go{background:var(--ok);border-color:var(--ok);color:#fff;font-size:17px;
+  padding:14px 20px;font-weight:650;width:100%}
+button.stop{background:var(--err);border-color:var(--err);color:#fff;font-size:17px;
+  padding:14px 20px;font-weight:650;width:100%}
+button.warnb{border-color:var(--warn);color:var(--warn)}
+button.errb{border-color:var(--err);color:var(--err)}
+input,select{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:5px 8px;min-width:0}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr) minmax(0,1fr);
+  gap:14px;padding:14px;align-items:start}
+@media(max-width:1150px){main{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@media(max-width:760px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:13px 15px;margin-bottom:14px}
+.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--muted);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.timer{font-family:var(--mono);font-size:52px;font-weight:700;line-height:1;
+  text-align:center;letter-spacing:-.02em;margin:6px 0}
+.timer.over{color:var(--err)}
+.timer.near{color:var(--warn)}
+.tsub{text-align:center;color:var(--muted);font-size:12px;margin-bottom:12px}
+.state{display:flex;align-items:center;gap:9px;justify-content:center;
+  padding:9px;border-radius:8px;margin-bottom:12px;font-weight:600}
+.state.idle{background:var(--chip);color:var(--muted)}
+.state.running{background:var(--okbg);color:var(--ok)}
+.state.stopped{background:var(--errbg);color:var(--err)}
+.dot{width:11px;height:11px;border-radius:50%;background:currentColor}
+.state.running .dot{animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.dice{font-family:var(--mono);font-size:34px;font-weight:700;width:66px;height:60px;
+  display:flex;align-items:center;justify-content:center;border:2px solid var(--accent);
+  border-radius:10px;color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:5px 7px;border-bottom:1px solid var(--line)}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+td.n{font-family:var(--mono);color:var(--muted);width:26px}
+.swatch{display:inline-block;width:12px;height:12px;border-radius:3px;
+  margin-right:6px;vertical-align:-1px;border:1px solid rgba(128,128,128,.4)}
+.sw-red{background:var(--red)} .sw-green{background:var(--green)} .sw-blue{background:var(--blue)}
+tr.done td{opacity:.42;text-decoration:line-through}
+tr.cur{background:var(--okbg)}
+tr.cur td{font-weight:650}
+.shelf{display:grid;gap:6px;margin-bottom:8px}
+.slot{border:1px solid var(--line);border-radius:7px;padding:6px;background:var(--bg)}
+.slot label{font-size:10px;color:var(--muted);display:block;margin-bottom:3px}
+.slot select{width:100%;font-size:12px;padding:3px 5px}
+.log{max-height:230px;overflow-y:auto;font-size:12px}
+.le{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+.le time{font-family:var(--mono);color:var(--muted);white-space:nowrap}
+.le.teleop{color:var(--warn)} .le.manual{color:var(--err)}
+.tel{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+.tile b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);font-weight:600}
+.tile span{font-family:var(--mono);font-size:17px}
+.conn{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--chip);color:var(--muted)}
+.conn.on{background:var(--okbg);color:var(--ok)}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+.pen{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+.pen b{font-family:var(--mono)}
+</style>
+
+<style id="hubnav-css">#hubnav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:5px 12px;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--chip,#eef1f6);border-bottom:1px solid var(--line,#dde1e8)}#hubnav a{color:var(--muted,#5b6472);text-decoration:none;padding:2px 9px;border-radius:6px}#hubnav a:hover{background:var(--panel,#fff);color:var(--ink,#14171c)}#hubnav a.here{background:var(--accent,#1f6feb);color:#fff}#hubnav b{margin-right:6px;color:var(--ink,#14171c);font-weight:650}</style>
+<script id="hubnav-head">
+/* ONE robot address for every page. Typed on any page, it is saved here and
+   every other page opens with it (added to the address bar as ?host=&port=). */
+(function(){try{
+  var q=new URLSearchParams(location.search), K="studica.robot";
+  var r=JSON.parse(localStorage.getItem(K)||"null");
+  if(q.get("host")){ localStorage.setItem(K,JSON.stringify({host:q.get("host"),port:q.get("port")||"5800"})); }
+  else if(r&&r.host){ q.set("host",r.host); q.set("port",r.port||"5800");
+    location.replace(location.pathname+"?"+q.toString()+location.hash); }
+}catch(e){}})();
+</script>
+</head>
+<body>
+<nav id="hubnav"><b>SC2026</b><a href="../index.html">Workbench</a><a href="../BEGINNER-GUIDE.html">1 Beginner guide</a><a href="../tools/portplanner.html">2 Port planner</a><a href="../tools/settings.html">3 Robot settings</a><a href="../tools/controlpanel.html">4 Control panel</a><a href="../tools/fieldmap.html">5 Field map</a><a href="../tools/runconsole.html" class="here">Run console (old brief)</a><a href="../tools/camview.html">Camera (old brief)</a></nav>
+
+
+
+<header>
+  <h1>Run Console <small>ESC2026 &middot; Skill 23 &middot; Module G</small></h1>
+  <span class="grow"></span>
+  <label style="font-size:12px;color:var(--muted)">Run
+    <select id="runNo"><option>1</option><option>2</option></select></label>
+  <span class="conn" id="conn">Offline — no robot</span>
+  <button id="exportBtn">Export report</button>
+  <button id="resetBtn">Reset</button>
+</header>
+
+<main>
+  <!-- ============ SETUP ============ -->
+  <section>
+    <div class="panel">
+      <h2>1 · Order (dice roll)</h2>
+      <div class="row" style="margin-bottom:10px">
+        <div class="dice" id="dice">–</div>
+        <button class="primary" id="rollBtn">Roll</button>
+        <select id="orderSel"></select>
+      </div>
+      <table id="orderTbl"></table>
+      <p class="note">Six possible orders are announced in the morning briefing;
+      a dice roll picks one. Edit each order's task list below to match the
+      briefing sheet — the CID's order table is confirmed on the day.</p>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Shelf layout <span class="conn" id="layoutWarn"></span></h2>
+      <div class="shelf" id="shelf"></div>
+      <p class="note">Run 2 uses a <b>surprise</b> dispensary layout (G.5). Entering
+      it here is one of the four permitted detection routes, alongside box colour,
+      ArUco and Code&nbsp;11 — and it is the only one that cannot fail on the day.
+      Keep it as the fallback even if vision works.</p>
+    </div>
+  </section>
+
+  <!-- ============ RUN ============ -->
+  <section>
+    <div class="panel">
+      <h2>3 · Run</h2>
+      <div class="state idle" id="state"><span class="dot"></span><span id="stateTxt">Idle</span></div>
+      <div class="timer" id="timer">0:00.0</div>
+      <div class="tsub" id="tsub">600 s rerun window · best score counts</div>
+      <button class="go" id="goBtn">Start run</button>
+      <p class="note" id="startNote">On the field the robot is started by its own
+      control-panel button (G.2.1 step 3). This starts the clock and the log.</p>
+    </div>
+
+    <div class="panel">
+      <h2>4 · Interactions <span class="conn" id="penTotal">no penalties</span></h2>
+      <div class="row">
+        <button class="warnb" id="teleopBtn" disabled>Teleop recovery</button>
+        <button class="errb" id="manualBtn" disabled>Manual reposition</button>
+        <button id="noteBtn" disabled>Note</button>
+      </div>
+      <div class="pen" style="margin-top:9px">
+        <span>Teleop adjustments</span><b id="cTeleop">0</b></div>
+      <div class="pen"><span>Manual repositions</span><b id="cManual">0</b></div>
+      <p class="note">Every interaction must be <b>announced to the Experts</b>
+      (5.6.3). Manual costs more than teleop (5.6.2) — reach for teleop first.
+      Log it as it happens; you will not remember afterwards.</p>
+    </div>
+
+    <div class="panel">
+      <h2>5 · Finish</h2>
+      <button class="stop" id="stopBtn" disabled>Robot home + red LED</button>
+      <p class="note">Experts do not stop the clock until the red stopped LED
+      flashes on the robot's control panel (G.2.1 step 6). Press this when the
+      LED is actually visible, not when the robot arrives.</p>
+    </div>
+  </section>
+
+  <!-- ============ MONITOR ============ -->
+  <section>
+    <div class="panel">
+      <h2>Telemetry</h2>
+      <div class="tel">
+        <div class="tile"><b>Heading</b><span id="tHead">—</span></div>
+        <div class="tile"><b>Battery</b><span id="tBatt">—</span></div>
+        <div class="tile"><b>Front range</b><span id="tSonar">—</span></div>
+        <div class="tile"><b>Lift</b><span id="tLift">—</span></div>
+      </div>
+      <p class="note">Live values need <code>rosbridge_server</code> on the VMX.
+      <b>Install it before you travel</b> — there is no internet on site.
+      Until then these stay blank; nothing else here depends on the robot.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Task progress</h2>
+      <table id="progTbl"></table>
+    </div>
+
+    <div class="panel">
+      <h2>Run log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const PRODUCTS=[
+  {id:0,name:"Product 1",colour:"red"},
+  {id:1,name:"Product 2",colour:"green"},
+  {id:2,name:"Product 3",colour:"blue"},
+];
+const DELIVERIES=[1,2,3,4];
+const SHELF_ROWS=2, SHELF_COLS=3;   // 2-shelf dispensary, up to 6 sets (G.3.3)
+const WINDOW_S=600;                  // 5.6.2 rerun window
+
+const KEY="studica.runconsole.v1";
+
+function blankOrders(){
+  // Six orders, editable to match the morning briefing sheet.
+  return [1,2,3,4,5,6].map(n=>({
+    n, tasks:[
+      {product:(n-1)%3, delivery:((n-1)%4)+1},
+      {product:(n)%3,   delivery:((n)%4)+1},
+    ]
+  }));
+}
+function blankShelf(){
+  const g=[];
+  for(let r=0;r<SHELF_ROWS;r++){ const row=[];
+    for(let c=0;c<SHELF_COLS;c++) row.push((r*SHELF_COLS+c)%3);
+    g.push(row); }
+  return g;
+}
+
+let S={
+  run:"1", dice:null, order:0,
+  orders:blankOrders(), shelf:blankShelf(),
+  phase:"idle",          // idle | running | stopped
+  t0:null, tEnd:null, done:[], log:[],
+};
+let tick=null;
+
+function load(){ try{ const r=localStorage.getItem(KEY);
+  if(r){ const s=JSON.parse(r); if(s&&s.orders) S=Object.assign(S,s); } }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,"0");
+function fmt(ms){ const t=Math.max(0,ms)/1000;
+  return Math.floor(t/60)+":"+pad(Math.floor(t%60))+"."+Math.floor((t*10)%10); }
+function elapsed(){ if(!S.t0) return 0;
+  return (S.tEnd||Date.now())-S.t0; }
+
+function logAdd(kind,text){
+  S.log.push({t:elapsed(),kind,text,wall:new Date().toISOString()});
+  save(); renderLog(); renderPenalties();
+}
+
+/* ---------------------------- live bridge ----------------------------
+   SEAM for the ROS 2 connection. Everything above works offline; wiring
+   this up is the only place that touches the robot.
+
+   Intended transport: rosbridge_server websocket on the VMX.
+     ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+     -> ws://10.12.34.2:9090
+   Subscribe: imu, /<sonar>/range, battery, lift encoder.
+   Publish:   the resolved order, so Run 2 step 2 "sends the order".
+--------------------------------------------------------------------- */
+const Bridge={
+  connected:false, ws:null,
+  connect(url){ /* TODO rosbridge websocket */ },
+  sendOrder(order){
+    if(!this.connected){ logAdd("info","Order recorded locally (robot offline)"); return false; }
+    return true;  // TODO publish to /run_order
+  },
+};
+
+/* ------------------------------ render ------------------------------ */
+function currentOrder(){ return S.orders[S.order]||S.orders[0]; }
+
+function renderOrder(){
+  const sel=$("orderSel");
+  if(sel.options.length!==S.orders.length){
+    sel.innerHTML="";
+    S.orders.forEach((o,i)=>{ const op=document.createElement("option");
+      op.value=i; op.textContent="Order "+o.n; sel.append(op); });
+  }
+  sel.value=S.order;
+  $("dice").textContent=S.dice==null?"–":S.dice;
+
+  const o=currentOrder(), t=$("orderTbl");
+  t.innerHTML="<tr><th></th><th>Product</th><th>Deliver to</th><th></th></tr>";
+  o.tasks.forEach((task,i)=>{
+    const tr=document.createElement("tr");
+    const p=PRODUCTS[task.product];
+    tr.innerHTML='<td class="n">'+(i+1)+'</td>';
+
+    const tdP=document.createElement("td");
+    const selP=document.createElement("select");
+    PRODUCTS.forEach(pr=>{ const op=document.createElement("option");
+      op.value=pr.id; op.textContent=pr.name+" ("+pr.colour+")"; selP.append(op); });
+    selP.value=task.product;
+    selP.onchange=()=>{ task.product=+selP.value; save(); render(); };
+    tdP.innerHTML='<span class="swatch sw-'+p.colour+'"></span>';
+    tdP.append(selP); tr.append(tdP);
+
+    const tdD=document.createElement("td");
+    const selD=document.createElement("select");
+    DELIVERIES.forEach(d=>{ const op=document.createElement("option");
+      op.value=d; op.textContent="Delivery "+d; selD.append(op); });
+    selD.value=task.delivery;
+    selD.onchange=()=>{ task.delivery=+selD.value; save(); render(); };
+    tdD.append(selD); tr.append(tdD);
+
+    const tdX=document.createElement("td");
+    const x=document.createElement("button"); x.textContent="✕";
+    x.onclick=()=>{ o.tasks.splice(i,1); save(); render(); };
+    tdX.append(x); tr.append(tdX);
+    t.append(tr);
+  });
+  const add=document.createElement("tr");
+  const td=document.createElement("td"); td.colSpan=4;
+  const b=document.createElement("button"); b.textContent="+ task";
+  b.onclick=()=>{ o.tasks.push({product:0,delivery:1}); save(); render(); };
+  td.append(b); add.append(td); t.append(add);
+}
+
+function renderShelf(){
+  const g=$("shelf");
+  g.style.gridTemplateColumns="repeat("+SHELF_COLS+",1fr)";
+  g.innerHTML="";
+  for(let r=0;r<SHELF_ROWS;r++) for(let c=0;c<SHELF_COLS;c++){
+    const d=document.createElement("div"); d.className="slot";
+    const lb=document.createElement("label");
+    lb.textContent=(r===0?"Upper":"Lower")+" · slot "+(c+1);
+    const sel=document.createElement("select");
+    const none=document.createElement("option");
+    none.value="-1"; none.textContent="empty"; sel.append(none);
+    PRODUCTS.forEach(p=>{ const op=document.createElement("option");
+      op.value=p.id; op.textContent=p.name+" ("+p.colour+")"; sel.append(op); });
+    sel.value=S.shelf[r][c];
+    sel.onchange=()=>{ S.shelf[r][c]=+sel.value; save(); renderShelf(); checkLayout(); };
+    d.append(lb,sel); g.append(d);
+  }
+  checkLayout();
+}
+
+function checkLayout(){
+  // Every product the order asks for must actually be on a shelf.
+  const have=new Set(); S.shelf.forEach(r=>r.forEach(v=>{ if(v>=0) have.add(v); }));
+  const want=[...new Set(currentOrder().tasks.map(t=>t.product))];
+  const missing=want.filter(p=>!have.has(p));
+  const w=$("layoutWarn");
+  if(missing.length){
+    w.className="conn"; w.style.background="var(--errbg)"; w.style.color="var(--err)";
+    w.textContent=missing.map(p=>PRODUCTS[p].name).join(", ")+" not on any shelf";
+  } else { w.className="conn on"; w.style.background=""; w.style.color="";
+    w.textContent="layout covers the order"; }
+}
+
+function renderProgress(){
+  const t=$("progTbl"), o=currentOrder();
+  t.innerHTML="<tr><th></th><th>Task</th><th></th></tr>";
+  o.tasks.forEach((task,i)=>{
+    const tr=document.createElement("tr");
+    const p=PRODUCTS[task.product];
+    const isDone=S.done.includes(i);
+    const isCur=!isDone && S.phase==="running" &&
+                o.tasks.findIndex((_,j)=>!S.done.includes(j))===i;
+    tr.className=isDone?"done":(isCur?"cur":"");
+    tr.innerHTML='<td class="n">'+(i+1)+'</td>'+
+      '<td><span class="swatch sw-'+p.colour+'"></span>'+p.name+
+      ' → Delivery '+task.delivery+'</td>';
+    const td=document.createElement("td");
+    const b=document.createElement("button");
+    b.textContent=isDone?"undo":"done";
+    b.disabled=S.phase==="idle";
+    b.onclick=()=>{
+      if(isDone) S.done=S.done.filter(x=>x!==i);
+      else { S.done.push(i); logAdd("task","Task "+(i+1)+" complete — "+p.name+
+             " to Delivery "+task.delivery); }
+      save(); render();
+    };
+    td.append(b); tr.append(td); t.append(tr);
+  });
+}
+
+function renderLog(){
+  const l=$("log");
+  if(!S.log.length){ l.innerHTML='<p class="note" style="margin:0">Nothing logged yet.</p>'; return; }
+  l.innerHTML="";
+  [...S.log].reverse().forEach(e=>{
+    const d=document.createElement("div"); d.className="le "+e.kind;
+    const t=document.createElement("time"); t.textContent=fmt(e.t);
+    const s=document.createElement("span"); s.textContent=e.text;
+    d.append(t,s); l.append(d);
+  });
+}
+
+function renderPenalties(){
+  const te=S.log.filter(e=>e.kind==="teleop").length;
+  const ma=S.log.filter(e=>e.kind==="manual").length;
+  $("cTeleop").textContent=te; $("cManual").textContent=ma;
+  const p=$("penTotal");
+  if(!te&&!ma){ p.className="conn on"; p.textContent="no penalties"; }
+  else { p.className="conn"; p.style.background="var(--warnbg)"; p.style.color="var(--warn)";
+    p.textContent=(te+ma)+" interaction"+(te+ma>1?"s":"")+" to announce"; }
+}
+
+function renderTimer(){
+  const ms=elapsed(), el=$("timer");
+  el.textContent=fmt(ms);
+  const s=ms/1000;
+  el.className="timer"+(s>WINDOW_S?" over":(s>WINDOW_S-60?" near":""));
+  $("tsub").textContent = s>WINDOW_S
+    ? "600 s window elapsed"
+    : (S.phase==="running"
+        ? Math.ceil(WINDOW_S-s)+" s left in the rerun window"
+        : "600 s rerun window · best score counts");
+}
+
+function renderState(){
+  const el=$("state"), tx=$("stateTxt");
+  el.className="state "+S.phase;
+  tx.textContent = S.phase==="idle"?"Idle":(S.phase==="running"?"Running":"Stopped — clock held");
+  $("goBtn").disabled = S.phase==="running";
+  $("goBtn").textContent = S.phase==="stopped"?"Start another run":"Start run";
+  $("stopBtn").disabled = S.phase!=="running";
+  ["teleopBtn","manualBtn","noteBtn"].forEach(id=>$(id).disabled = S.phase!=="running");
+  $("runNo").value=S.run;
+}
+
+function render(){ save(); renderOrder(); renderShelf(); renderProgress();
+  renderState(); renderTimer(); renderLog(); renderPenalties(); }
+
+/* ------------------------------ actions ----------------------------- */
+$("rollBtn").onclick=()=>{
+  S.dice=1+Math.floor(Math.random()*6);
+  S.order=S.dice-1;
+  logAdd("info","Dice rolled "+S.dice+" → Order "+currentOrder().n);
+  render();
+};
+$("orderSel").onchange=e=>{ S.order=+e.target.value; save(); render(); };
+$("runNo").onchange=e=>{ S.run=e.target.value; save(); };
+
+$("goBtn").onclick=()=>{
+  S.phase="running"; S.t0=Date.now(); S.tEnd=null; S.done=[];
+  const o=currentOrder();
+  logAdd("info","RUN "+S.run+" started — Order "+o.n+", "+o.tasks.length+" tasks");
+  Bridge.sendOrder(o);
+  if(tick) clearInterval(tick);
+  tick=setInterval(()=>{ renderTimer(); },100);
+  render();
+};
+$("stopBtn").onclick=()=>{
+  S.phase="stopped"; S.tEnd=Date.now();
+  if(tick){ clearInterval(tick); tick=null; }
+  const o=currentOrder();
+  logAdd("info","Red LED shown — clock stopped at "+fmt(elapsed())+
+         " ("+S.done.length+"/"+o.tasks.length+" tasks)");
+  render();
+};
+$("teleopBtn").onclick=()=>{ logAdd("teleop","Teleop recovery — ANNOUNCE to Experts"); };
+$("manualBtn").onclick=()=>{ logAdd("manual","Manual reposition — ANNOUNCE to Experts (higher penalty)"); };
+$("noteBtn").onclick=()=>{ const t=prompt("Note:"); if(t) logAdd("info",t); };
+
+$("resetBtn").onclick=()=>{
+  if(!confirm("Reset the run? Order and shelf layout are kept.")) return;
+  if(tick){ clearInterval(tick); tick=null; }
+  S.phase="idle"; S.t0=null; S.tEnd=null; S.done=[]; S.log=[];
+  render();
+};
+
+$("exportBtn").onclick=()=>{
+  const o=currentOrder();
+  const L=["ESC2026 Skill 23 — Module G run report",
+           "Run: "+S.run,
+           "Dice: "+(S.dice??"—")+"   Order: "+o.n,
+           "Duration: "+fmt(elapsed()),
+           "Tasks complete: "+S.done.length+"/"+o.tasks.length,
+           "Teleop adjustments: "+S.log.filter(e=>e.kind==="teleop").length,
+           "Manual repositions: "+S.log.filter(e=>e.kind==="manual").length,
+           "",
+           "Shelf layout:"];
+  S.shelf.forEach((r,i)=>L.push("  "+(i===0?"Upper":"Lower")+": "+
+    r.map(v=>v<0?"empty":PRODUCTS[v].name).join(" | ")));
+  L.push("","Order tasks:");
+  o.tasks.forEach((t,i)=>L.push("  "+(i+1)+". "+PRODUCTS[t.product].name+
+    " ("+PRODUCTS[t.product].colour+") → Delivery "+t.delivery+
+    (S.done.includes(i)?"   [done]":"")));
+  L.push("","Log:");
+  S.log.forEach(e=>L.push("  "+fmt(e.t)+"  ["+e.kind+"] "+e.text));
+  const blob=new Blob([L.join("\n")],{type:"text/plain"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="run"+S.run+"_order"+o.n+".txt"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+};
+
+load();
+if(S.phase==="running" && S.t0){ tick=setInterval(()=>renderTimer(),100); }
+render();
+</script>
+<script id="hubnav-js">
+/* Keep the shared robot address up to date and carry it on every menu link. */
+(function(){
+  var K="studica.robot", H=["host","rHost"], P=["port","rPort"];
+  function el(ids){ for(var i=0;i<ids.length;i++){ var e=document.getElementById(ids[i]); if(e) return e; } return null; }
+  function cur(){
+    var h=el(H), p=el(P), r=null;
+    try{ r=JSON.parse(localStorage.getItem(K)||"null"); }catch(e){}
+    return { host:(h&&h.value.trim())||(r&&r.host)||"", port:(p&&p.value.trim())||(r&&r.port)||"5800" };
+  }
+  function store(){ var c=cur(); if(c.host){ try{ localStorage.setItem(K,JSON.stringify(c)); }catch(e){} } }
+  [el(H),el(P)].forEach(function(e){ if(e){ e.addEventListener("input",store); e.addEventListener("change",store); } });
+  store();
+  document.querySelectorAll('#hubnav a').forEach(function(a){
+    a.addEventListener("click",function(){ var c=cur(); if(!c.host) return;
+      var base=a.getAttribute("href").split("?")[0];
+      a.href=base+"?host="+encodeURIComponent(c.host)+"&port="+encodeURIComponent(c.port); });
+  });
+})();
+</script>
+</body>
+</html>

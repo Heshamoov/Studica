@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SC2026 Workbench</title>
+<!--
+  SC2026 Skill 23 — the one page that ties everything together.
+
+  Left:  the whole job as ordered steps. Each step says WHAT to do, WHICH
+         file to use, and has a tick box that remembers progress.
+  Right: opens the chosen tool or document in place.
+
+  Shared settings (robot address) live here and are handed to the tools in
+  the link itself (?host=&port=), so they work even where the browser does
+  not share saved data between local files.
+
+  SELF-CONTAINED. No CDN — no internet needed on site.
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#14171c; --muted:#5b6472; --line:#dde1e8;
+  --accent:#1f6feb; --ok:#127a3e; --warn:#a15c00;
+  --okbg:#e7f5ec; --warnbg:#fdf3e2; --chip:#eef1f6;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+    --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f;
+    --okbg:#12251b; --warnbg:#2a2013; --chip:#1e242c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+  --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f;
+  --okbg:#12251b; --warnbg:#2a2013; --chip:#1e242c;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 16px;
+  background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:15px;margin:0;font-weight:650}
+h1 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.grow{flex:1}
+button,input{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+input{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 8px;min-width:0}
+.bar{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.prog{height:6px;width:150px;background:var(--chip);border-radius:4px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--ok);width:0}
+.layout{flex:1;display:grid;grid-template-columns:minmax(330px,440px) minmax(0,1fr);min-height:0}
+@media(max-width:900px){.layout{grid-template-columns:minmax(0,1fr)} .viewer{min-height:70vh}}
+.steps{overflow-y:auto;border-right:1px solid var(--line);padding:12px 14px 30px;background:var(--bg)}
+.phase{margin-bottom:16px}
+.phase h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  margin:0 0 7px;display:flex;justify-content:space-between;align-items:center}
+.phase h2 span{font-weight:600;color:var(--ink);font-size:10px;letter-spacing:0}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;margin-bottom:6px;display:grid;grid-template-columns:22px minmax(0,1fr);gap:6px}
+.step.done{opacity:.55}
+.step.done .t{text-decoration:line-through}
+.step input[type=checkbox]{margin:3px 0 0;width:15px;height:15px}
+.t{font-weight:600;font-size:13px}
+.d{font-size:12px;color:var(--muted);margin:2px 0 5px}
+.files{display:flex;flex-wrap:wrap;gap:5px}
+.file{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 8px;
+  border-radius:6px;border:1px solid var(--line);background:var(--bg);cursor:pointer;
+  font-family:var(--mono)}
+.file:hover{border-color:var(--accent)}
+.file.sel{border-color:var(--accent);background:var(--chip)}
+.tag{font-family:system-ui,sans-serif;font-size:9.5px;font-weight:700;padding:0 5px;border-radius:4px;
+  letter-spacing:.03em}
+.tag.cur{background:var(--okbg);color:var(--ok)}
+.tag.upd{background:var(--warnbg);color:var(--warn)}
+.viewer{display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.vbar{display:flex;gap:8px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);
+  font-size:12px;flex-wrap:wrap}
+.vbar code{font-family:var(--mono);background:var(--chip);padding:1px 6px;border-radius:4px}
+iframe{flex:1;border:0;width:100%;background:var(--bg)}
+.welcome{flex:1;overflow-y:auto;padding:22px 26px;max-width:860px}
+.welcome h3{margin:18px 0 6px;font-size:14px}
+.welcome p,.welcome li{color:var(--muted);font-size:13px}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
+.flow b{background:var(--chip);border:1px solid var(--line);border-radius:7px;padding:4px 9px;
+  font-size:12px;font-weight:600;color:var(--ink)}
+.flow i{color:var(--muted);font-style:normal}
+.infobox{border-radius:8px;padding:9px 12px;font-size:13px;margin:10px 0;border:1px solid}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin:6px 0 2px}
+.marks-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.mark{background:var(--chip);border:1px solid var(--line);border-radius:8px;
+  padding:8px 12px;font-size:12px;text-align:center;min-width:100px}
+.mark b{display:block;font-size:20px;font-weight:700;color:var(--accent)}
+.mark small{color:var(--muted);font-size:10.5px}
+</style>
+<style id="hubnav-css">#hubnav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:5px 12px;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--chip,#eef1f6);border-bottom:1px solid var(--line,#dde1e8)}#hubnav a{color:var(--muted,#5b6472);text-decoration:none;padding:2px 9px;border-radius:6px}#hubnav a:hover{background:var(--panel,#fff);color:var(--ink,#14171c)}#hubnav a.here{background:var(--accent,#1f6feb);color:#fff}#hubnav b{margin-right:6px;color:var(--ink,#14171c);font-weight:650}</style>
+<script id="hubnav-head">
+/* ONE robot address for every page. Typed on any page, it is saved here and
+   every other page opens with it (added to the address bar as ?host=&port=). */
+(function(){try{
+  var q=new URLSearchParams(location.search), K="studica.robot";
+  var r=JSON.parse(localStorage.getItem(K)||"null");
+  if(q.get("host")){ localStorage.setItem(K,JSON.stringify({host:q.get("host"),port:q.get("port")||"5800"})); }
+  else if(r&&r.host){ q.set("host",r.host); q.set("port",r.port||"5800");
+    location.replace(location.pathname+"?"+q.toString()+location.hash); }
+}catch(e){}})();
+</script>
+</head>
+<body>
+
+<nav id="hubnav"><b>SC2026</b><a href="index.html" class="here">Workbench</a><a href="BEGINNER-GUIDE.html">1 Beginner guide</a><a href="tools/portplanner.html">2 Port planner</a><a href="tools/settings.html">3 Robot settings</a><a href="tools/controlpanel.html">4 Control panel</a><a href="tools/fieldmap.html">5 Field map</a><a href="tools/runconsole.html">Run console (old brief)</a><a href="tools/camview.html">Camera (old brief)</a></nav>
+
+<header>
+  <h1>SC2026 Workbench <small>Skill 23 &middot; Autonomous Mobile Robotics</small></h1>
+  <span class="grow"></span>
+  <span class="bar">Robot
+    <input id="host" value="10.12.34.2" style="width:112px">
+    <input id="port" value="5800" style="width:58px"></span>
+  <span class="bar"><span id="progTxt">0 / 0</span><span class="prog"><i id="progBar"></i></span></span>
+  <button id="homeBtn">Overview</button>
+</header>
+
+<div class="layout">
+  <aside class="steps" id="steps"></aside>
+
+  <section class="viewer">
+    <div class="vbar" id="vbar" hidden>
+      <b id="vTitle"></b>
+      <code id="vPath"></code>
+      <span class="grow"></span>
+      <button id="newTab">Open in new tab</button>
+      <button id="closeView">Close</button>
+    </div>
+    <iframe id="frame" hidden title="tool"></iframe>
+
+    <div class="welcome" id="welcome">
+      <h2 style="margin:0 0 4px;font-size:18px">SC2026 · Skill 23 · Autonomous Mobile Robotics</h2>
+      <p>Work down the steps on the left in order. Click any file chip to open it here.
+      Tick boxes are saved in the browser so you can pick up where you left off.</p>
+
+      <div class="legend">
+        <span><span class="tag cur">CURRENT</span> ready to use</span>
+        <span><span class="tag upd">NEEDS UPDATE</span> usable, one section to fill in</span>
+      </div>
+
+      <h3>The marks</h3>
+      <div class="marks-row">
+        <div class="mark"><b>10</b><small>A1 Work<br>organisation</small></div>
+        <div class="mark"><b>10</b><small>B1 Robot<br>design</small></div>
+        <div class="mark"><b>20</b><small>C1 Simple<br>tasks</small></div>
+        <div class="mark"><b>30</b><small>D1 Teleop<br>run</small></div>
+        <div class="mark"><b>30</b><small>E1 Autonomous<br>run</small></div>
+      </div>
+      <p>Three hours on the clock. Two team members. One 2 × 2 m arena.</p>
+
+      <h3>The objects</h3>
+      <p>
+        <b>Flat pieces</b> — 75 × 75 × 10 mm, lying flat. Colours: red, green, yellow, blue + one surprise hazard colour announced at the morning briefing.<br>
+        <b>Storage bases</b> — 100 mm cube, 80 × 80 mm cavity. Front face is a stepped slot: an 80 mm top mouth tapers into a 50 × 30 mm side slot whose bottom edge sits 30 mm off the floor — confirmed from the official SC2026_TP23 appendix, not a photo.<br>
+        <b>Delivery stands</b> — 25 mm / 50 mm / 75 mm / 100 mm high, each a walled pocket (95 × 95 mm inner, 5 mm wall). Pocket depth is 20 mm on the 25 mm stand, 40 mm on the other three.
+      </p>
+
+      <div class="infobox" style="background:var(--okbg);border-color:var(--ok);color:var(--ok)">
+        <b>How it runs: C++, compiled on the robot.</b> This robot has no ROS 2, and the WPILib libraries that ship on the board are roboRIO (soft-float) builds the Pi cannot load. So <code>robot-onboard/</code> bundles the Raspberry Pi builds and you compile it with the robot's own <code>g++</code>. Every number you tune lives on the robot and is edited from <b>tools/settings.html</b> &mdash; nothing to edit in code. Earlier attempts (Python/ROS 2, roboRIO C++) are in <code>old/</code> for reference only.
+      </div>
+
+      <h3>How the data flows</h3>
+      <div class="flow">
+        <b>Copy + compile on robot</b><i>&rarr;</i><b>Settings page</b><i>&rarr;</i><b>Control panel</b><i>&rarr;</i>
+        <b>Build routine</b><i>&rarr;</i><b>Paste into Robot.cpp</b><i>&rarr;</i><b>Start button runs it</b>
+      </div>
+      <p>The pages send every button to the robot on port 5800 over plain HTTP. One dispatch table (<code>Sequence.cpp</code>) serves the buttons, saved routines and the physical start button, so they cannot disagree. Your calibration is saved on the robot in <code>settings.cfg</code>, so copying new code never overwrites it &mdash; five teams can share the same program.</p>
+
+      <h3>What is built</h3>
+      <div class="infobox" style="background:var(--okbg);border-color:var(--ok);color:var(--ok)">
+        <b>Gamepad teleop (D1 · 30 marks)</b> — no extension axis to jog any more: the chassis itself
+        drives forward/backward to insert and withdraw the fork. RB/LB drive the clamp servo directly (open / hold).
+      </div>
+      <div class="infobox" style="background:var(--okbg);border-color:var(--ok);color:var(--ok)">
+        <b>Camera colour detection (C1 + E1)</b> — <code>Camera.cpp</code> classifies pieces as
+        red / green / yellow / blue / hazard on the same HSV thresholds as the original C++ version.
+        The <code>sort_piece</code> command routes each piece to the correct delivery stand automatically.
+      </div>
+      <div class="infobox" style="background:var(--okbg);border-color:var(--ok);color:var(--ok)">
+        <b>Clamp servo (pick sequence)</b> — <code>clamp_open()</code> fires before entering the storage base,
+        <code>clamp_hold()</code> secures the piece after lifting off the slot. Two panel buttons: clamp_open / clamp_hold.
+      </div>
+
+      <h3>Key dimensions (all in mm)</h3>
+      <p>Storage slot 30–60 (elevator min height 30, matching) · Fork enters at 32 · Lifts to 40 (on piece) ·
+      Clears the slot at 65 · Carry height 40 · Stand pocket depth 20 (stand 1) / 40 (stands 2–4).</p>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const KEY    = "studica.workbench.v1";
+const SHARED = "studica.shared.v1";
+
+const PHASES = [
+ {name:"1 · Understand the brief", when:"start here", steps:[
+  {id:"brief_arena", t:"Study the arena, objects and scoring",
+   d:"2 × 2 m arena, 3 hours, team of 2. Flat pieces 75 × 75 × 10 mm lying flat. Storage bases 100 mm cube with internal ledges. Stands at 25/50/75/100 mm. Scoring: A1 10 · B1 10 · C1 20 · D1 30 · E1 30.",
+   files:[{p:"SC2026_TP23 1.pdf", s:"cur"}, {p:"SC2026_IL23 1.pdf", s:"cur"}, {p:"SC2026_TD23 1.pdf", s:"cur"}]},
+  {id:"arena_dims", t:"Study the dimensioned drawings",
+   d:"Arena layout, storage base cavity (80 × 80 mm, front slot 30-60 mm off the floor), flat piece profile.",
+   files:[{p:"reference/sc2026_images/tp_p8_11.png", s:"cur", label:"arena"},
+          {p:"reference/sc2026_images/tp_p7_8.png",  s:"cur", label:"storage base"},
+          {p:"reference/sc2026_images/tp_p7_7.png",  s:"cur", label:"flat piece"}]},
+  {id:"kit_rules", t:"Check what the kit allows",
+   d:"One laptop, one micro SD, one sealed USB stick, 1.2 kg of 3D print budget. Studica kit parts only. No internet on site.",
+   files:[{p:"SC2026_IL23 1.pdf", s:"cur"}]},
+ ]},
+
+ {name:"2 · Build the mechanism", when:"workshop", steps:[
+  {id:"fork_design", t:"Review the end effector design",
+   d:"Front-mounted elevator (30 mm minimum height) with a one-piece fork + servo clamp. Fork slides sideways through the 50 × 30 mm slot at 30-60 mm off the floor. Clamp arm secures the piece for travel. Print in PETG; clamp contact pad in TPU.",
+   files:[{p:"cad/endeffector.scad", s:"cur"}]},
+  {id:"fork_print", t:"Print the three parts",
+   d:"fork_combined × 1 (one piece, both tines), clamp_arm × 1, servo_bracket × 1 (sized to the real Studica 75002 servo, not a generic estimate). Settings and assembly order are on the print pack page.",
+   files:[{p:"cad/fork_combined.stl", s:"cur", label:"fork_combined ×1"},
+          {p:"cad/clamp_arm.stl", s:"cur", label:"clamp_arm ×1"},
+          {p:"cad/servo_bracket.stl", s:"cur", label:"servo_bracket ×1"}]},
+  {id:"measure_ledge", t:"Confirm the storage slot height on a real base",
+   d:"30-60 mm is confirmed from the official SC2026_TP23 appendix, not a photo. Still worth checking with calipers. If your kit's base differs, change SLOT_BOTTOM in robot-onboard/include/Constants.h and rebuild.",
+   files:[{p:"robot-onboard/include/Constants.h", s:"cur"}]},
+  {id:"cut_lift", t:"Set the lift travel",
+   d:"The fork must reach 65 mm (clear of the slot) and no more is needed. Keep the mast short for a lower centre of gravity and to stay within the 1.2 kg print budget. Elevator is front-mounted, so LIFT_MIN is 30 mm, not 0 — it can never reach the floor.",
+   files:[]},
+  {id:"panel_hw", t:"Wire the control panel",
+   d:"Start button, stop button (active low, reads true when NOT pressed), running LED, stopped LED. Pins default to 8, 9, 13, 12 (from the Studica course project); change them on the Settings page (Wiring) if yours differ. Confirm the stop button's polarity yourself.",
+   files:[{p:"tools/settings.html", s:"cur", tool:true}]},
+ ]},
+
+ {name:"3 · Program setup", when:"laptop + robot", steps:[
+  {id:"ports", t:"Plan every motor and sensor port (optional)",
+   d:"A planning aid for catching pin clashes before you wire. It does not write the robot's settings; the real wiring numbers go on the Settings page. Fill in both Titan IDs, four drive channels, the lift and the clamp servo.",
+   files:[{p:"tools/portplanner.html", s:"cur", tool:true}]},
+  {id:"copy_build", t:"Copy the program to the robot and compile it there",
+   d:"scp -r robot-onboard pi@10.12.34.2:~/ from the laptop. On the robot: set the date (sudo date -s), then make -j4 and ./run.sh. The first build takes a few minutes. Wait for 'panel server: LISTENING on port 5800'. The beginner guide has Copy buttons for every command.",
+   files:[{p:"BEGINNER-GUIDE.html", s:"cur", tool:true},
+          {p:"robot-onboard/README.md", s:"cur"}]},
+  {id:"settings_open", t:"Open the Settings page and confirm it connects",
+   d:"Laptop on the robot's Wi-Fi, robot address 10.12.34.2, port 5800. The page should say 'connected'. If not: is ./run.sh still running, is the laptop address 10.12.34.x, and try a private window (a browser proxy can block local addresses).",
+   files:[{p:"tools/settings.html", s:"cur", tool:true}]},
+ ]},
+
+ {name:"4 · First power-on", when:"at the robot", steps:[
+  {id:"bring_up", t:"Wheel-by-wheel bring-up (on blocks)",
+   d:"On the Settings page press each Spin button. Check the right wheel moves and turns forward. Wrong wheel: change its motor port (Wiring) and restart. Wrong direction: tick its reversed box (instant). Do this before any compound move.",
+   files:[{p:"tools/settings.html", s:"cur", tool:true}]},
+  {id:"calibrate", t:"Calibrate wheel size and lift scale",
+   d:"Drive 1000 mm, measure with a tape, and use Calibration helpers on the Settings page: it works out the new wheel radius. Repeat until three runs in a row land within about 20 mm. Do the same for the lift scale.",
+   files:[{p:"tools/settings.html", s:"cur", tool:true},
+          {p:"tools/controlpanel.html", s:"cur", tool:true}]},
+  {id:"clamp_cal", t:"Calibrate the clamp servo angles",
+   d:"Command clamp_open and clamp_hold from the panel. On the Settings page adjust Open angle (arm clears the storage base rim), Hold angle (presses the piece without servo buzz) and Settle time if the arm overshoots. Changes are instant.",
+   files:[{p:"tools/settings.html", s:"cur", tool:true},
+          {p:"tools/controlpanel.html", s:"cur", tool:true}]},
+ ]},
+
+ {name:"5 · Simple tasks — C1, 20 marks", when:"at the robot", steps:[
+  {id:"buttons", t:"Test every button on the control panel",
+   d:"Drive group: forward, backward, strafe, turn. Lift group: up/down/home/carry/stand. Clamp: open/hold. Compound: PICK and PLACE. This covers C1 almost word for word.",
+   files:[{p:"tools/controlpanel.html", s:"cur", tool:true}]},
+  {id:"pick_test", t:"Test a full PICK and PLACE cycle on real hardware",
+   d:"PICK: clamp open, lift to 32, drive forward into the slot, lift to 40 (piece lifts off), clamp hold, lift to 65 (clear the slot), drive backward, lift to 40. Then PLACE on each of the four stands. Adjust Insert into storage / Insert over stand / Hover gap on the Settings page (instant).",
+   files:[{p:"tools/controlpanel.html", s:"cur", tool:true},
+          {p:"tools/settings.html", s:"cur", tool:true},
+          {p:"robot-onboard/src/Oms.cpp", s:"cur"}]},
+  {id:"shuffle_colour", t:"Show the object colour live",
+   d:"The robot reads a USB camera, averages the HSV of the centre 120 x 120 px region, and classifies red / green / yellow / blue / hazard / none. The result appears in the read_colour command. Tune the ranges on the Settings page (Colour detection). No camera is detected yet on the test robot: plug one in and check ls /dev/video*.",
+   files:[{p:"tools/settings.html", s:"cur", tool:true}]},
+ ]},
+
+ {name:"6 · Teleoperated run — D1, 30 marks", when:"at the robot", steps:[
+  {id:"teleop", t:"Drive and operate with the Xbox controller",
+   d:"Left stick: drive. Right stick: rotate. RT raises lift, LT lowers. RB/LB drive the clamp servo directly (open/hold). Physical start button runs the stored routine.",
+   files:[{p:"robot-onboard/src/Robot.cpp", s:"cur"}]},
+  {id:"teleop_practice", t:"Practise a full run against the clock",
+   d:"Pick each colour from storage, identify it by eye, drive to the matching stand height and place. Aim to complete at least two pieces in the 3-hour window.",
+   files:[]},
+ ]},
+
+ {name:"7 · Autonomous run — E1, 30 marks", when:"laptop + robot", steps:[
+  {id:"map", t:"Draw the court and plan waypoint positions",
+   d:"Mark all storage bases, delivery stands and the start box. Measure X/Y coordinates from the arena corner. These go into your routine as forward/strafe distances.",
+   files:[{p:"tools/fieldmap.html", s:"cur", tool:true}]},
+  {id:"vision_auto", t:"Verify colour detection including the surprise colour",
+   d:"The surprise hazard colour is announced at the briefing. Any saturated colour not matching red/green/yellow/blue is classified as 'hazard'; sort_piece then routes it to the fallback stand (default 1). Tune the ranges on the Settings page after the briefing.",
+   files:[{p:"tools/settings.html", s:"cur", tool:true},
+          {p:"tools/controlpanel.html", s:"cur", tool:true}]},
+  {id:"routine", t:"Build the full autonomous routine on the panel",
+   d:"Use the + buttons to add steps, drag to reorder, then Load to robot and Run. Use sort_piece instead of place_stand so colour routing is automatic. Repeat until the run is reliable.",
+   files:[{p:"tools/controlpanel.html", s:"cur", tool:true}]},
+  {id:"export", t:"Export the routine into Robot.cpp",
+   d:"Copy the routine string from the panel's Export button and paste it into LoadFallbackRoutine() in Robot.cpp. Copy the program to the robot and rebuild (guide Steps 7 and 8) so the physical start button runs it with no laptop connected.",
+   files:[{p:"tools/controlpanel.html", s:"cur", tool:true},
+          {p:"robot-onboard/src/Robot.cpp", s:"cur"}]},
+ ]},
+
+ {name:"8 · Before the competition", when:"last week", steps:[
+  {id:"readiness", t:"Final checklist",
+   d:"Battery charged. Robot fits in the start box (600 mm centre square). Laptop has the project loaded. SD card has the latest build and a backup of settings (Settings page > Copy my settings). USB stick sealed with Workshop Manager.",
+   files:[{p:"READINESS.md", s:"cur"}]},
+  {id:"media", t:"Pack one micro SD and one USB stick",
+   d:"SC2026 rules: one micro SD per team, one USB stick sealed with the Workshop Manager before the session starts. No internet on site — everything must already be on the laptop and the robot, including the compiled program.",
+   files:[]},
+  {id:"day_of", t:"Morning briefing — get the surprise colour",
+   d:"Note the hazard colour announced at the briefing. Then tune the colour ranges on the Settings page so it reads as 'hazard' reliably on your camera under the venue lighting.",
+   files:[{p:"tools/settings.html", s:"cur", tool:true}]},
+ ]},
+];
+
+const TAGTXT = {cur:"CURRENT", upd:"NEEDS UPDATE"};
+const $ = id => document.getElementById(id);
+let done = {};
+let current = null;
+
+function load(){
+  try{ const r = localStorage.getItem(KEY); if(r) done = JSON.parse(r).done || {}; }catch(e){}
+  try{ const r = localStorage.getItem(SHARED); if(r){ const s = JSON.parse(r);
+    if(s.host) $("host").value = s.host; if(s.port) $("port").value = s.port; } }catch(e){}
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify({done})); }catch(e){}
+  try{ localStorage.setItem(SHARED, JSON.stringify({host:$("host").value.trim(),
+                                                    port:$("port").value.trim()})); }catch(e){}
+}
+
+function urlFor(f){
+  const enc = f.p.split("/").map(encodeURIComponent).join("/");
+  if(!f.tool) return enc;
+  return enc + "?host=" + encodeURIComponent($("host").value.trim()) +
+               "&port=" + encodeURIComponent($("port").value.trim()) + "&from=hub";
+}
+
+function open(f){
+  current = f;
+  $("welcome").hidden = true;
+  $("frame").hidden = false;
+  $("vbar").hidden = false;
+  $("vTitle").textContent = f.label || f.p.split("/").pop();
+  $("vPath").textContent  = f.p;
+  $("frame").src = urlFor(f);
+  render();
+}
+
+function home(){
+  current = null;
+  $("frame").src = "about:blank";
+  $("frame").hidden = true; $("vbar").hidden = true; $("welcome").hidden = false;
+  render();
+}
+
+function render(){
+  const host = $("steps"); host.innerHTML = "";
+  let total = 0, ticked = 0;
+  PHASES.forEach(ph => {
+    const w = document.createElement("div"); w.className = "phase";
+    const pd = ph.steps.filter(s => done[s.id]).length;
+    const h = document.createElement("h2");
+    h.innerHTML = ph.name + " <span>" + ph.when + " · " + pd + "/" + ph.steps.length + "</span>";
+    w.append(h);
+    ph.steps.forEach(st => {
+      total++; if(done[st.id]) ticked++;
+      const el = document.createElement("div");
+      el.className = "step" + (done[st.id] ? " done" : "");
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!done[st.id];
+      cb.onchange = () => { done[st.id] = cb.checked; save(); render(); };
+      const body = document.createElement("div");
+      const t = document.createElement("div"); t.className = "t"; t.textContent = st.t;
+      const d = document.createElement("div"); d.className = "d"; d.textContent = st.d;
+      const files = document.createElement("div"); files.className = "files";
+      st.files.forEach(f => {
+        const b = document.createElement("span");
+        b.className = "file" + (current && current.p === f.p ? " sel" : "");
+        const tag = document.createElement("span");
+        tag.className = "tag " + f.s; tag.textContent = TAGTXT[f.s] || f.s.toUpperCase();
+        b.append(document.createTextNode(f.label || f.p.split("/").pop()), tag);
+        b.title = f.p;
+        b.onclick = () => open(f);
+        files.append(b);
+      });
+      body.append(t, d);
+      if(st.files.length) body.append(files);
+      el.append(cb, body);
+      w.append(el);
+    });
+    host.append(w);
+  });
+  $("progTxt").textContent = ticked + " / " + total;
+  $("progBar").style.width = (total ? 100 * ticked / total : 0) + "%";
+}
+
+$("homeBtn").onclick = home;
+$("closeView").onclick = home;
+$("newTab").onclick = () => { if(current) window.open(urlFor(current), "_blank"); };
+["host","port"].forEach(id => $(id).addEventListener("input", () => {
+  save();
+  if(current && current.tool) $("frame").src = urlFor(current);
+}));
+
+load();
+save();
+render();
+
+// Same host/port-carrying trick as every other page's hubnav: put the
+// robot address in the query string so clicking a nav link keeps it.
+document.querySelectorAll('#hubnav a').forEach(a => {
+  if (a.classList.contains('here')) return;
+  const href = a.getAttribute('href');
+  const sep = href.includes('?') ? '&' : '?';
+  a.href = href + sep + "host=" + encodeURIComponent($("host").value.trim()) +
+           "&port=" + encodeURIComponent($("port").value.trim());
+});
+</script>
+<script id="hubnav-js">
+/* Keep the shared robot address up to date and carry it on every menu link. */
+(function(){
+  var K="studica.robot", H=["host","rHost"], P=["port","rPort"];
+  function el(ids){ for(var i=0;i<ids.length;i++){ var e=document.getElementById(ids[i]); if(e) return e; } return null; }
+  function cur(){
+    var h=el(H), p=el(P), r=null;
+    try{ r=JSON.parse(localStorage.getItem(K)||"null"); }catch(e){}
+    return { host:(h&&h.value.trim())||(r&&r.host)||"", port:(p&&p.value.trim())||(r&&r.port)||"5800" };
+  }
+  function store(){ var c=cur(); if(c.host){ try{ localStorage.setItem(K,JSON.stringify(c)); }catch(e){} } }
+  [el(H),el(P)].forEach(function(e){ if(e){ e.addEventListener("input",store); e.addEventListener("change",store); } });
+  store();
+  document.querySelectorAll('#hubnav a').forEach(function(a){
+    a.addEventListener("click",function(){ var c=cur(); if(!c.host) return;
+      var base=a.getAttribute("href").split("?")[0];
+      a.href=base+"?host="+encodeURIComponent(c.host)+"&port="+encodeURIComponent(c.port); });
+  });
+})();
+</script>
+</body>
+</html>

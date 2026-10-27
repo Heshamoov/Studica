@@ -1,0 +1,1154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studica Port Planner</title>
+<!--
+  ESC2026 Skill 23 - port planner / bring-up bench.
+
+  SELF-CONTAINED ON PURPOSE. No CDN, no framework, no fonts, no network of
+  any kind. CID 4.2 forbids internet on site, so this must work from a USB
+  stick on a competition laptop with the WiFi off. Do not "improve" it by
+  pulling in a library.
+
+  Saves to localStorage automatically, and Export JSON gives you a file to
+  carry between machines (and onto all three SD card clones).
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#14171c; --muted:#5b6472; --line:#dde1e8;
+  --accent:#1f6feb; --ok:#127a3e; --warn:#a15c00; --err:#c0281c;
+  --okbg:#e7f5ec; --warnbg:#fdf3e2; --errbg:#fdeceb;
+  --chip:#eef1f6; --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+:root:not([data-theme="light"]){ }
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+    --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+    --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+  --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+  --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+  padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:20}
+h1{font-size:16px;margin:0;font-weight:650;letter-spacing:-.01em}
+h1 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.grow{flex:1}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:7px;
+  padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--err)}
+input,select{background:var(--panel);border:1px solid var(--line);
+  border-radius:6px;padding:5px 8px;min-width:0}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+main{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);
+  gap:16px;padding:16px;align-items:start}
+@media(max-width:980px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--muted);margin:0 0 10px}
+.dev{border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+  margin-bottom:9px;background:var(--bg)}
+.dev.bad{border-color:var(--err);background:var(--errbg)}
+.dev-head{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.dev-head input.nm{flex:1;font-weight:600}
+.kind{font-size:11px;color:var(--muted);font-family:var(--mono);
+  background:var(--chip);padding:2px 7px;border-radius:20px;white-space:nowrap}
+.fields{display:flex;flex-wrap:wrap;gap:10px}
+.f{display:flex;flex-direction:column;gap:3px}
+.f label{font-size:11px;color:var(--muted)}
+.f input,.f select{width:118px}
+.msg{padding:8px 11px;border-radius:7px;margin-bottom:7px;font-size:13px;
+  display:flex;gap:8px;align-items:flex-start}
+.msg b{font-family:var(--mono);font-weight:600;font-size:12px}
+.msg.err{background:var(--errbg);color:var(--err)}
+.msg.warn{background:var(--warnbg);color:var(--warn)}
+.msg.ok{background:var(--okbg);color:var(--ok)}
+.bank{margin-bottom:12px}
+.bank h3{font-size:11px;margin:0 0 5px;color:var(--muted);font-weight:600}
+.pins{display:flex;flex-wrap:wrap;gap:3px}
+.pin{width:30px;height:26px;border-radius:5px;border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:11px;
+  font-family:var(--mono);background:var(--panel);color:var(--muted);
+  cursor:default;position:relative}
+.pin.used{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.pin.clash{background:var(--err);border-color:var(--err);color:#fff;font-weight:600}
+.tabs{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  padding:12px;overflow-x:auto;font-family:var(--mono);font-size:12px;
+  line-height:1.55;max-height:520px}
+.foot{padding:0 18px 26px;color:var(--muted);font-size:12px;max-width:900px}
+.foot code{font-family:var(--mono);background:var(--chip);padding:1px 5px;border-radius:4px}
+.empty{color:var(--muted);padding:18px;text-align:center;border:1px dashed var(--line);
+  border-radius:8px}
+</style>
+
+<style id="hubnav-css">#hubnav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:5px 12px;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--chip,#eef1f6);border-bottom:1px solid var(--line,#dde1e8)}#hubnav a{color:var(--muted,#5b6472);text-decoration:none;padding:2px 9px;border-radius:6px}#hubnav a:hover{background:var(--panel,#fff);color:var(--ink,#14171c)}#hubnav a.here{background:var(--accent,#1f6feb);color:#fff}#hubnav b{margin-right:6px;color:var(--ink,#14171c);font-weight:650}</style>
+<script id="hubnav-head">
+/* ONE robot address for every page. Typed on any page, it is saved here and
+   every other page opens with it (added to the address bar as ?host=&port=). */
+(function(){try{
+  var q=new URLSearchParams(location.search), K="studica.robot";
+  var r=JSON.parse(localStorage.getItem(K)||"null");
+  if(q.get("host")){ localStorage.setItem(K,JSON.stringify({host:q.get("host"),port:q.get("port")||"5800"})); }
+  else if(r&&r.host){ q.set("host",r.host); q.set("port",r.port||"5800");
+    location.replace(location.pathname+"?"+q.toString()+location.hash); }
+}catch(e){}})();
+</script>
+</head>
+<body>
+<nav id="hubnav"><b>SC2026</b><a href="../index.html">Workbench</a><a href="../BEGINNER-GUIDE.html">1 Beginner guide</a><a href="../tools/portplanner.html" class="here">2 Port planner</a><a href="../tools/settings.html">3 Robot settings</a><a href="../tools/controlpanel.html">4 Control panel</a><a href="../tools/fieldmap.html">5 Field map</a><a href="../tools/runconsole.html">Run console (old brief)</a><a href="../tools/camview.html">Camera (old brief)</a></nav>
+
+
+
+<header>
+  <h1>Studica Port Planner <small>SC2026 &middot; Skill 23</small></h1>
+  <span class="grow"></span>
+  <input id="robotName" placeholder="Robot name" style="width:150px">
+  <select id="addType"></select>
+  <button class="primary" id="addBtn">Add device</button>
+  <span style="width:1px;height:22px;background:var(--line,#ccc)"></span>
+  <label style="font-size:12px">Robot <input id="rHost" value="10.12.34.2" style="width:100px"></label>
+  <input id="rPort" value="5800" style="width:50px">
+  <button class="primary" id="sendBtn" title="Copy every device that has a Robot role into the robot's Settings">Send to robot</button>
+  <button id="loadRobotBtn" title="Read the pins the robot uses now and show them here">Load from robot</button>
+  <button id="exportBtn">Export JSON</button>
+  <button id="importBtn">Import</button>
+  <button class="danger" id="clearBtn">Clear</button>
+  <input type="file" id="fileIn" accept=".json" hidden>
+</header>
+<div id="sendBar" style="display:none;margin:8px 14px;padding:9px 12px;border-radius:8px;font-size:13px"></div>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2>Robot shape</h2>
+      <div class="fields">
+        <div class="f"><label>Drivetrain</label>
+          <select id="shDrive" style="width:170px">
+            <option value="mecanum4">mecanum4 &mdash; 4 mecanum</option>
+            <option value="omni3">omni3 &mdash; 3 omni</option>
+            <option value="omni4">omni4 &mdash; 4 omni</option>
+            <option value="diff2">diff2 &mdash; 2 wheels</option>
+          </select></div>
+        <div class="f"><label>Manipulator</label>
+          <select id="shManip" style="width:170px">
+            <option value="none">none &mdash; drive only</option>
+            <option value="gripper_only">gripper_only</option>
+            <option value="lift_only">lift_only</option>
+            <option value="lift_extend">lift_extend</option>
+          </select></div>
+        <div class="f"><label>&nbsp;</label>
+          <button class="primary" id="shApply">Build device list</button></div>
+      </div>
+      <p class="foot" style="padding:0;margin:9px 0 0" id="shNote"></p>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <h2>Devices</h2>
+      <div id="devices"></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Generated code</h2>
+      <div class="tabs" id="tabs"></div>
+      <button id="copyBtn" style="margin-bottom:10px">Copy to clipboard</button>
+      <pre id="code"></pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="panel">
+      <h2>Checks</h2>
+      <div id="checks"></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Pin map</h2>
+      <div id="pinmap"></div>
+    </div>
+  </section>
+</main>
+
+<div class="foot">
+  <p><b>One global channel space.</b> Studica addresses every peripheral from a
+  single index range — <code>dio pin: 15</code>, <code>servo port: 14</code>,
+  <code>ultrasonic ping: 8 / echo: 9</code>, <code>sharp port: 22</code>. So a
+  servo on 14 and a DIO on 14 are treated as the same physical pin. This tool
+  flags that; it is the most common bring-up mistake and the hardest to see
+  on the bench.</p>
+  <p><b>One caveat, unresolved.</b> Studica&rsquo;s own working course project
+  has <code>studica::Servo servo{8}</code> alongside <code>START_BUTTON = 8</code>,
+  which suggests the servo header may be a <i>separate</i> space from DIO. That
+  cannot be settled without the board in hand. The tool still warns &mdash; a
+  false alarm costs a glance, a missed clash costs a run. Check the silkscreen;
+  if servos really are separate, say so and the check can be relaxed.</p>
+  <p><b>Two different stacks — pick one.</b> <b>params.yaml + Python</b> is the
+  ROS 2 route via <code>studica_control</code>; its topic, message and service
+  names are copied from Studica's own <code>params_template.yaml</code> and
+  example nodes, so they are verified rather than guessed. <b>C++/Java</b> is the
+  separate WPILib route using <code>TitanQuad</code>. They do not mix.</p>
+  <p><b>Note for this robot:</b> ROS 2 is not installed on the test robot's image and
+  the real program (<code>robot-onboard/</code>) is C++. Plan pins here, give each device a <b>Robot role</b>, then press <b>Send to robot</b>: the numbers are converted and written to the robot's settings (the same values you see on <code>tools/settings.html</code>). Channel numbers on this page are the <b>board's own</b> (FlexDIO 0-11, HiCurrDIO 12-21); every number is the one printed on the board and is sent as it is.</p>
+  <p>Autosaves to this browser. <b>Export JSON</b> before switching machines.</p>
+</div>
+
+<script>
+"use strict";
+
+/* =================================================================
+   VMX-pi + studica_control resource model.
+
+   VERIFIED against Studica's own params_template.yaml and the 13
+   Python examples in Studica-Robotics/ROS2. Topic names, message
+   types, service names and config keys below are copied from that
+   source, not inferred.
+
+   ONE GLOBAL CHANNEL SPACE. Studica's template addresses everything
+   from a single index range - dio pin 15, servo port 14, ultrasonic
+   ping 8 / echo 9, sharp port 22. So a servo on 14 and a DIO on 14
+   are the same pin. Modelling analog as its own 0-3 space (as an
+   earlier version of this file did) hides exactly that collision.
+================================================================== */
+const VMX = {
+  chanBanks:[
+    {name:"FlexDIO",          from:0,  to:11},
+    {name:"High-Current DIO", from:12, to:21},
+    {name:"CommDIO / Analog", from:22, to:29},
+  ],
+  chanCount:30,
+  pwmMax:27,
+  encoderPairs:[[0,1],[2,3],[4,5],[6,7],[8,9]],
+};
+
+/* Device types mirror studica_control components 1:1, so params.yaml
+   generation is a direct mapping rather than a translation. */
+const TYPES = {
+  titan_motor:{
+    label:"Titan motor", nick:"motor", comp:"titan",
+    fields:[
+      {k:"canId",  t:"num",  d:42, label:"CAN ID"},
+      {k:"motor",  t:"num",  d:0,  label:"Motor 0-3"},
+      {k:"invert", t:"bool", d:false, label:"Invert motor"},
+      {k:"mode",   t:"enum", d:"quadrature", opts:["quadrature","absolute"], label:"Encoder mode"},
+      {k:"dpt",    t:"num",  d:1,  label:"Dist/tick", step:"any"},
+    ],
+    claims:d=>["titan:"+d.canId+":"+d.motor],
+    check:d=> (d.motor<0||d.motor>3) ? "Titan motor must be 0-3" : null,
+  },
+  servo:{
+    label:"Servo", nick:"servo", comp:"servo",
+    fields:[
+      {k:"port",t:"num",d:14,label:"VMX channel (pin no.)"},
+      {k:"kind",t:"enum",d:"standard",opts:["standard","continuous","linear"],label:"Type"},
+    ],
+    claims:d=>["ch:"+d.port],
+    check:d=> (d.port<0||d.port>VMX.pwmMax) ? "PWM channel must be 0-"+VMX.pwmMax : null,
+  },
+  dio:{
+    label:"Digital I/O", nick:"dio", comp:"dio",
+    fields:[
+      {k:"pin",t:"num",d:15,label:"Channel"},
+      {k:"kind",t:"enum",d:"output",opts:["input","output"],label:"Direction"},
+    ],
+    claims:d=>["ch:"+d.pin],
+    check:d=> (d.pin<0||d.pin>=VMX.chanCount) ? "Channel must be 0-"+(VMX.chanCount-1) : null,
+  },
+  encoder:{
+    label:"Quadrature encoder", nick:"encoder", comp:"encoder",
+    fields:[{k:"pair",t:"num",d:0,label:"Pair 0-4"}],
+    claims:d=>{const p=VMX.encoderPairs[d.pair]; return p?["ch:"+p[0],"ch:"+p[1]]:[];},
+    check:d=> !VMX.encoderPairs[d.pair] ? "Encoder pair must be 0-4 (channels 0-1,2-3,4-5,6-7,8-9)" : null,
+  },
+  duty_cycle:{
+    label:"Duty-cycle encoder", nick:"absenc", comp:"duty_cycle",
+    fields:[{k:"port",t:"num",d:8,label:"Channel"}],
+    claims:d=>["ch:"+d.port],
+    check:d=> (d.port<0||d.port>=VMX.chanCount) ? "Channel must be 0-"+(VMX.chanCount-1) : null,
+  },
+  ultrasonic:{
+    label:"Ultrasonic", nick:"sonar", comp:"ultrasonic",
+    fields:[{k:"ping",t:"num",d:8,label:"Ping (trig)"},{k:"echo",t:"num",d:9,label:"Echo"}],
+    claims:d=>["ch:"+d.ping,"ch:"+d.echo],
+    check:d=> d.ping===d.echo ? "Ping and echo cannot be the same channel" : null,
+  },
+  sharp:{
+    label:"Sharp IR range", nick:"sharp", comp:"sharp",
+    fields:[{k:"port",t:"num",d:22,label:"Analog channel"}],
+    claims:d=>["ch:"+d.port],
+    check:d=> (d.port<0||d.port>=VMX.chanCount) ? "Channel must be 0-"+(VMX.chanCount-1) : null,
+  },
+  cobra:{
+    label:"Cobra reflectance (I2C)", nick:"cobra", comp:"cobra",
+    fields:[{k:"vref",t:"num",d:5,label:"Vref (V)",step:"any"}],
+    claims:()=>[], check:()=>null,
+  },
+  colore:{
+    label:"Colore colour sensor", nick:"color", comp:"colore",
+    fields:[
+      {k:"transport",t:"enum",d:"can",opts:["can","usb"],label:"Transport"},
+      {k:"canId",t:"num",d:0,label:"CAN ID"},
+      {k:"bright",t:"num",d:50,label:"Brightness"},
+    ],
+    claims:d=> d.transport==="can" ? ["colore:"+d.canId] : [],
+    check:d=> (d.bright<0||d.bright>100) ? "Brightness is 0-100" : null,
+  },
+  parsec:{
+    label:"Parsec ToF", nick:"parsec", comp:"parsec",
+    fields:[
+      {k:"transport",t:"enum",d:"can",opts:["can","usb"],label:"Transport"},
+      {k:"canId",t:"num",d:5,label:"CAN ID 0-63"},
+    ],
+    claims:d=> d.transport==="can" ? ["parsec:"+d.canId] : [],
+    check:d=> (d.canId<0||d.canId>63) ? "Parsec CAN ID must be 0-63" : null,
+  },
+  imu:{ label:"navX IMU (onboard)", nick:"imu", comp:"imu", fields:[],
+        claims:()=>[], check:()=>null },
+  gamepad:{
+    label:"Gamepad → cmd_vel", nick:"gamepad", comp:"gamepad",
+    fields:[
+      {k:"ax",t:"num",d:1,label:"Axis fwd/back"},
+      {k:"ay",t:"num",d:-1,label:"Axis strafe"},
+      {k:"az",t:"num",d:0,label:"Axis rotate"},
+    ],
+    claims:()=>[], check:()=>null,
+  },
+};
+
+/* ------------------------- link to the robot ------------------------- */
+/* Each device can be given a ROBOT ROLE. "Send to robot" then writes the
+   matching setting on the robot (tools/settings.html shows the same values).
+   This planner uses the board's own channel numbers (FlexDIO 0-11,
+   HiCurrDIO 12-21). The robot program uses WPILib numbers, which are the
+   same for DIO but DIFFERENT for servos:
+       VMX 0-11  (FlexDIO)   -> PWM 10-21
+       VMX 12-21 (HiCurrDIO) -> PWM 0-9  (only with the HiCurrDIO jumper) */
+const ROLES = {
+  titan_motor:[["","- not sent -"],["fl","Front-left wheel"],["fr","Front-right wheel"],["rl","Rear-left wheel"],["rr","Rear-right wheel"]],
+  servo:[["","- not sent -"],["lift","Lift servo"],["pusher","Pusher servo"]],
+  ultrasonic:[["","- not sent -"],["us","Front ultrasonic"]],
+  sharp:[["","- not sent -"],["ir","Front Sharp IR"]],
+  cobra:[["","- not sent -"],["cobra","Line follower (Cobra)"]],
+  dio:[["","- not sent -"],["start","Start button"],["stop","Stop button"],["reset","Reset button"],["lift_top","Lift TOP switch"],["lift_bottom","Lift BOTTOM switch"],["led_run","Running LED (green)"],["led_stop","Stopped LED (red)"]],
+};
+function guessRole(d){
+  const n=String(d.name||"").toLowerCase().replace(/[^a-z]/g,"");
+  const g=(re,r)=>re.test(n)?r:null;
+  if(d.type==="titan_motor") return g(/^(fl|frontleft)/,"fl")||g(/^(fr|frontright)/,"fr")||g(/^(rl|rearleft|backleft)/,"rl")||g(/^(rr|rearright|backright)/,"rr")||"";
+  if(d.type==="servo") return g(/lift|elev/,"lift")||g(/push|clamp|grip/,"pusher")||"";
+  if(d.type==="ultrasonic") return "us";
+  if(d.type==="sharp") return "ir";
+  if(d.type==="cobra") return "cobra";
+  if(d.type==="dio") return g(/start/,"start")||g(/reset/,"reset")||g(/stop.*led|red|stopped/,"led_stop")||g(/run|green/,"led_run")||g(/stop/,"stop")||g(/top|high|upper/,"lift_top")||g(/bottom|low|lower/,"lift_bottom")||"";
+  return "";
+}
+function vmxToPwm(ch){
+  if(ch>=0&&ch<=11) return ch+10;
+  if(ch>=12&&ch<=21) return ch-12;
+  return null;
+}
+function settingsFor(d){
+  const r=d.role, out=[], warn=[];
+  if(!r) return {out,warn};
+  if(d.type==="titan_motor"){
+    const K={fl:["FRONT_LEFT","INVERT_FL"],fr:["FRONT_RIGHT","INVERT_FR"],rl:["REAR_LEFT","INVERT_RL"],rr:["REAR_RIGHT","INVERT_RR"]}[r];
+    // Only CAN ID and port are sent. Wheel DIRECTION is not: it must come from
+    // the Spin test on the Settings page (sending this planner's default
+    // "invert: No" flipped the right-side wheels and made W spin the robot).
+    out.push(["TITAN_ID",d.canId],[K[0],d.motor]);
+  } else if(d.type==="servo"){
+    const pwm=vmxToPwm(d.port);
+    if(pwm===null) warn.push(d.name+": VMX channel "+d.port+" cannot drive a servo");
+    else{
+      out.push([r==="lift"?"LIFT_SERVO_PIN":"SERVO_PIN",d.port]);
+      if(d.port>=12) warn.push(d.name+": on HiCurrDIO - works only with the HiCurrDIO jumper fitted");
+    }
+  } else if(d.type==="ultrasonic"){
+    out.push(["US_ENABLED","true"],["US_PING",d.ping],["US_ECHO",d.echo]);
+  } else if(d.type==="sharp"){
+    // the planner counts analog as VMX 22-25; the robot wants the printed Analog 0-3
+    const ch = d.port>=22 ? d.port-22 : d.port;
+    if(ch<0||ch>3) warn.push(d.name+": analog channel must be printed Analog 0-3 (or VMX 22-25)");
+    else out.push(["IR_ENABLED","true"],["IR_CHANNEL",ch]);
+  } else if(d.type==="cobra"){
+    out.push(["COBRA_ENABLED","true"],["COBRA_VREF",d.vref]);
+  } else if(d.type==="dio"){
+    const K={start:"START_BUTTON",stop:"STOP_BUTTON",reset:"RESET_BUTTON",lift_top:"LIFT_TOP_SWITCH",lift_bottom:"LIFT_BOTTOM_SWITCH",led_run:"RUNNING_LED",led_stop:"STOPPED_LED"}[r];
+    out.push([K,d.pin]);
+    if((r==="led_run"||r==="led_stop")&&d.pin>=12) warn.push(d.name+": an LED on HiCurrDIO needs the HiCurrDIO jumper fitted (or move it to FlexDIO 0-11)");
+  }
+  return {out,warn};
+}
+function showBar(html,kind){
+  const b=$("sendBar"); b.style.display="block"; b.innerHTML=html;
+  b.style.background = kind==="ok" ? "var(--okbg,#e7f5ec)" : kind==="err" ? "var(--errbg,#fdeceb)" : "var(--warnbg,#fdf3e2)";
+  b.style.color = kind==="ok" ? "var(--ok,#127a3e)" : kind==="err" ? "var(--err,#c0281c)" : "var(--warn,#a15c00)";
+}
+const rBase=()=>"http://"+$("rHost").value.trim()+":"+$("rPort").value.trim();
+async function rCall(route){
+  const r=await fetch(rBase()+route,{cache:"no-store",signal:AbortSignal.timeout(4000)});
+  return r.json();
+}
+/* Load from robot: read the robot's current settings and put them on the
+   devices here (creates a device for any role that is missing). */
+async function loadFromRobot(){
+  let j;
+  try{ j=await rCall("/settings"); }catch(e){ showBar("Could not reach the robot at "+rBase()+". Is the program running and are you on its Wi-Fi?","err"); return; }
+  const v={}; (j.settings||[]).forEach(x=>v[x.key]=x.value);
+  const has=k=>k in v;
+  const devFor=(type,role,nick)=>{
+    let d=state.devices.find(x=>x.type===type&&x.role===role);
+    if(!d){ d=addDevice(type); d.role=role; d.name=uniqueName(nick); }
+    return d;
+  };
+  const rows=[];
+  const note=(what,val)=>rows.push("<tr><td>"+what+"</td><td><b>"+val+"</b></td></tr>");
+  if(has("TITAN_ID")){
+    [["fl","FRONT_LEFT","INVERT_FL","Front-left wheel"],["fr","FRONT_RIGHT","INVERT_FR","Front-right wheel"],
+     ["rl","REAR_LEFT","INVERT_RL","Rear-left wheel"],["rr","REAR_RIGHT","INVERT_RR","Rear-right wheel"]].forEach(([r,pk,ik,lbl])=>{
+      if(!has(pk)) return;
+      const d=devFor("titan_motor",r,lbl.replace(/\W/g,""));
+      d.canId=v.TITAN_ID; d.motor=v[pk];
+      note(lbl,"Titan "+v.TITAN_ID+", motor "+v[pk]);
+    });
+  }
+  const pwmToPin=c=>c>=10?c-10:c+12;
+  [["lift","LIFT_SERVO_PIN","LIFT_SERVO_CHANNEL","Lift servo"],["pusher","SERVO_PIN","SERVO_CHANNEL","Pusher servo"]].forEach(([r,pk,ck,lbl])=>{
+    const pin=has(pk)?v[pk]:has(ck)?pwmToPin(v[ck]):null;
+    if(pin==null) return;
+    const d=devFor("servo",r,lbl.replace(/\W/g,"")); d.port=pin;
+    note(lbl,"pin "+pin);
+  });
+  [["start","START_BUTTON","Start button","input"],["stop","STOP_BUTTON","Stop button","input"],["reset","RESET_BUTTON","Reset button","input"],
+   ["lift_top","LIFT_TOP_SWITCH","Lift TOP switch","input"],["lift_bottom","LIFT_BOTTOM_SWITCH","Lift BOTTOM switch","input"],
+   ["led_run","RUNNING_LED","Green LED","output"],["led_stop","STOPPED_LED","Red LED","output"]].forEach(([r,k,lbl,dir])=>{
+    if(!has(k)) return;
+    if(v[k]<0){ note(lbl,"not fitted"); return; }
+    const d=devFor("dio",r,lbl.replace(/\W/g,"")); d.pin=v[k]; d.kind=dir;
+    note(lbl,"pin "+v[k]);
+  });
+  if(has("US_ENABLED")){
+    if(v.US_ENABLED){ const d=devFor("ultrasonic","us","Ultrasonic"); d.ping=v.US_PING; d.echo=v.US_ECHO; note("Ultrasonic","ping "+v.US_PING+", echo "+v.US_ECHO); }
+    else note("Ultrasonic","not fitted");
+  }
+  if(has("IR_ENABLED")){
+    if(v.IR_ENABLED){ const d=devFor("sharp","ir","SharpIR"); d.port=v.IR_CHANNEL; note("Sharp IR","analog "+v.IR_CHANNEL); }
+    else note("Sharp IR","not fitted");
+  }
+  if(has("COBRA_ENABLED")){
+    if(v.COBRA_ENABLED){ const d=devFor("cobra","cobra","Cobra"); if(has("COBRA_VREF")) d.vref=v.COBRA_VREF; note("Cobra line sensor","fitted"); }
+    else note("Cobra line sensor","not fitted");
+  }
+  save(); render();
+  if(!rows.length){ showBar("The robot answered but sent no pin settings (old program? copy + rebuild).","warn"); return; }
+  showBar("<b>Loaded from the robot</b> - these are the pins it uses now. Change any device below, then press <b>Send to robot</b> and restart."+
+          "<table style='margin-top:6px;border-collapse:collapse'>"+rows.join("")+"</table>"+
+          (j.restart_pending?"<div style='margin-top:4px'>Note: some changes are waiting for a restart.</div>":""),"ok");
+}
+async function sendToRobot(){
+  const list=[], warns=[], seen={};
+  state.devices.forEach(d=>{ const {out,warn}=settingsFor(d); warns.push(...warn);
+    out.forEach(([k,v])=>{ if(k in seen && String(seen[k])!==String(v)) warns.push(k+" set twice with different values ("+seen[k]+" and "+v+")"); seen[k]=v; }); });
+  Object.keys(seen).forEach(k=>list.push([k,seen[k]]));
+  if(!list.length){ showBar("Nothing to send: give some devices a <b>Robot role</b> first (the drop-down on each device).","warn"); return; }
+  if(!confirm("Send "+list.length+" settings to the robot at "+rBase()+"?\n\n"+list.map(([k,v])=>k+" = "+v).join("\n"))) return;
+  showBar("sending...","warn");
+  const ok=[], bad=[];
+  for(const [k,v] of list){
+    try{ const r=await rCall("/set?key="+encodeURIComponent(k)+"&value="+encodeURIComponent(v));
+         (r.ok?ok:bad).push(k+" = "+v+(r.ok?"":" ("+r.result+")")); }
+    catch(e){ bad.push(k+": robot not reachable"); break; }
+  }
+  let html="<b>"+ok.length+" of "+list.length+" settings sent.</b> ";
+  if(bad.length) html+="<br>Problems: "+bad.join("; ");
+  if(warns.length) html+="<br>Check: "+warns.join("; ");
+  if(ok.length) html+='<br>Wiring changes apply after a restart: <button id="rRestart">Restart robot program</button> &nbsp;<a id="rOpen" href="#">open Settings page</a>';
+  showBar(html, bad.length?"err":(warns.length?"warn":"ok"));
+  const rb=$("rRestart"); if(rb) rb.onclick=async()=>{ try{ await rCall("/restart"); showBar("Restarting the robot program... it comes back in a few seconds.","ok"); }catch(e){ showBar("Could not reach the robot to restart it.","err"); } };
+  const ro=$("rOpen"); if(ro) ro.onclick=e=>{ e.preventDefault(); window.open("settings.html?host="+encodeURIComponent($("rHost").value)+"&port="+encodeURIComponent($("rPort").value),"_blank"); };
+}
+
+/* ------------------------------- state ------------------------------- */
+const KEY="studica.portplanner.v2";
+let state={ robot:"Robot", devices:[] }, lang="yaml", nextId=1;
+
+function load(){
+  try{ const raw=localStorage.getItem(KEY);
+    if(raw){ const s=JSON.parse(raw);
+      if(s&&Array.isArray(s.devices)){ state=s;
+        nextId=Math.max(0,...state.devices.map(d=>d.id||0))+1; } }
+  }catch(e){}
+}
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(state)); }catch(e){} }
+
+function addDevice(type){
+  const t=TYPES[type]; if(!t) return null;
+  const d={id:nextId++,type,name:uniqueName(t.nick||t.label)};
+  t.fields.forEach(f=>d[f.k]=f.d);
+  state.devices.push(d); return d;
+}
+function uniqueName(base){
+  const slug=String(base).replace(/[^A-Za-z0-9]+/g,"");
+  let n=0,nm; do{ nm=slug+(n++||""); }while(state.devices.some(d=>d.name===nm));
+  return nm;
+}
+
+/* ---------------------------- validation ---------------------------- */
+function validate(){
+  const msgs=[], seen={}, bad=new Set(), chanUse={}, clash=new Set();
+
+  state.devices.forEach(d=>{
+    const t=TYPES[d.type];
+    if(!t){ // e.g. a config exported by an older version of this tool
+      bad.add(d.id);
+      msgs.push({lvl:"err",who:d.name||"?",
+        text:'unknown device type "'+d.type+'" — from an older config; delete and re-add it'});
+      return;
+    }
+    const e=t.check(d);
+    if(e){ msgs.push({lvl:"err",who:d.name,text:e}); bad.add(d.id); }
+    t.claims(d).forEach(c=>{
+      (seen[c]=seen[c]||[]).push(d);
+      if(c.startsWith("ch:")) (chanUse[+c.slice(3)]=chanUse[+c.slice(3)]||[]).push(d);
+    });
+  });
+
+  Object.entries(seen).forEach(([res,ds])=>{
+    if(ds.length<2) return;
+    ds.forEach(d=>bad.add(d.id));
+    let pretty,why;
+    if(res.startsWith("ch:")){ pretty="channel "+res.slice(3); why="one physical pin, two devices";
+      clash.add(+res.slice(3)); }
+    else if(res.startsWith("titan:")){ const q=res.split(":");
+      pretty="Titan CAN "+q[1]+" motor "+q[2]; why="one motor output, two devices"; }
+    else if(res.startsWith("colore:")){ pretty="Colore CAN ID "+res.slice(7); why="duplicate CAN address"; }
+    else if(res.startsWith("parsec:")){ pretty="Parsec CAN ID "+res.slice(7); why="duplicate CAN address"; }
+    else { pretty=res; why="claimed twice"; }
+    msgs.push({lvl:"err",who:ds.map(d=>d.name).join(" + "),text:"both claim "+pretty+" — "+why});
+  });
+
+  const names={};
+  state.devices.forEach(d=>{ (names[d.name]=names[d.name]||[]).push(d); });
+  Object.entries(names).forEach(([n,ds])=>{
+    if(ds.length>1){ ds.forEach(d=>bad.add(d.id));
+      msgs.push({lvl:"err",who:n,text:"duplicate name — ROS node names and generated code will collide"}); }
+  });
+
+  state.devices.filter(d=>d.type==="servo"&&d.port<10).forEach(d=>{
+    msgs.push({lvl:"warn",who:d.name,text:"PWM 0-9 are unavailable when the board is in INPUT mode"});
+  });
+  if(state.devices.length && !state.devices.some(d=>d.type==="imu"))
+    msgs.push({lvl:"warn",who:"imu",text:"no IMU — Module D navigation needs heading"});
+  if(state.devices.length && !state.devices.some(d=>d.type==="gamepad"))
+    msgs.push({lvl:"warn",who:"gamepad",text:"no gamepad — Module G lets you teleop a stuck robot for a smaller penalty than touching it"});
+
+  if(!msgs.some(m=>m.lvl==="err") && state.devices.length)
+    msgs.unshift({lvl:"ok",who:"OK",text:state.devices.length+" devices, no conflicts"});
+  return {msgs,bad,chanUse,clash};
+}
+
+/* ----------------------------- helpers ----------------------------- */
+const ident=s=>{ let x=String(s).replace(/[^A-Za-z0-9_]/g,"_");
+  if(/^[0-9]/.test(x)) x="_"+x; return x||"dev"; };
+const UPPER=s=>ident(s).replace(/([a-z0-9])([A-Z])/g,"$1_$2").toUpperCase();
+const lower=s=>{ const x=ident(s); return x.charAt(0).toLowerCase()+x.slice(1); };
+const of=t=>state.devices.filter(d=>d.type===t);
+const known=()=>state.devices.filter(d=>TYPES[d.type]);
+const num=v=>Number.isFinite(+v)?(+v):0;
+
+function banner(c){
+  return [c+" Generated by Studica Port Planner",
+          c+" Robot: "+(state.robot||"Robot")+"   Devices: "+state.devices.length,
+          c+" Channel numbers are yours. API signatures are taken from Studica's",
+          c+" params_template.yaml, ROS2 examples and mobile-robotics-foundations.",""].join("\n");
+}
+
+/* --------------------------- params.yaml ---------------------------
+   With ROS 2 this file IS the port configuration - it is what the
+   robot actually consumes. Drop it at
+     ~/studica_ws/src/studica_control/config/params.yaml
+-------------------------------------------------------------------- */
+function genYaml(){
+  const L=[banner("#")];
+  L.push("# Install to: ~/studica_ws/src/studica_control/config/params.yaml",
+         "# Then:       ros2 launch studica_control studica_launch.py","",
+         "control_server:","  ros__parameters:","");
+
+  const titans=of("titan_motor");
+  if(titans.length){
+    const byCan={};
+    titans.forEach(d=>{ (byCan[d.canId]=byCan[d.canId]||[]).push(d); });
+    L.push("    titan:","      enabled: true",
+           "      sensors: ["+Object.keys(byCan).map(c=>'"titan'+c+'"').join(", ")+"]");
+    Object.entries(byCan).forEach(([can,ms])=>{
+      L.push("      titan"+can+":","        can_id: "+can,
+             "        motor_freq: 15600","        encoder_rate_hz: 20",
+             "        motor_update_rate_hz: 50","        limit_switches: false");
+      for(let i=0;i<4;i++){
+        const m=ms.find(x=>+x.motor===i);
+        L.push("        m_"+i+":");
+        if(m){
+          L.push("          # "+m.name,
+                 '          encoder_mode: "'+m.mode+'"',
+                 "          dist_per_tick: "+(+m.dpt||1.0).toFixed(4).replace(/0+$/,"0"),
+                 "          invert_motor: "+(!!m.invert),
+                 "          invert_encoder: false","          invert_rpm: false");
+        } else {
+          L.push("          # unused",'          encoder_mode: "quadrature"',
+                 "          dist_per_tick: 1.0","          invert_motor: false",
+                 "          invert_encoder: false","          invert_rpm: false");
+        }
+      }
+    });
+    L.push("");
+  }
+
+  if(of("imu").length){
+    const d=of("imu")[0];
+    L.push("    imu:","      enabled: true",'      name: "'+d.name+'"',
+           '      topic: "'+d.name+'"','      frame_id: "imu_link"',"");
+  }
+
+  const grp=(comp,list,body)=>{
+    if(!list.length) return;
+    L.push("    "+comp+":","      enabled: true",
+           "      sensors: ["+list.map(d=>'"'+d.name+'"').join(", ")+"]");
+    list.forEach(d=>{ L.push("      "+d.name+":"); body(d); });
+    L.push("");
+  };
+
+  grp("encoder", of("encoder"), d=>{
+    const p=VMX.encoderPairs[d.pair]||[0,1];
+    L.push("        port_a: "+p[0],"        port_b: "+p[1],'        topic: "'+d.name+'"');
+  });
+  grp("duty_cycle", of("duty_cycle"), d=>{
+    L.push("        port: "+num(d.port),'        topic: "'+d.name+'"');
+  });
+  grp("servo", of("servo"), d=>{
+    L.push("        port: "+num(d.port),'        type: "'+d.kind+'"');
+  });
+  grp("ultrasonic", of("ultrasonic"), d=>{
+    L.push("        ping: "+num(d.ping),"        echo: "+num(d.echo),
+           '        frame_id: "'+d.name+'_link"');
+  });
+  grp("sharp", of("sharp"), d=>{
+    L.push("        port: "+num(d.port),'        frame_id: "'+d.name+'_link"');
+  });
+  grp("dio", of("dio"), d=>{
+    L.push("        pin: "+num(d.pin),'        type: "'+d.kind+'"');
+  });
+  grp("cobra", of("cobra"), d=>{
+    L.push("        vref: "+(+d.vref||5).toFixed(1));
+  });
+  grp("colore", of("colore"), d=>{
+    L.push("        transport: "+d.transport,"        can_id: "+num(d.canId),
+           "        serial_port: /dev/ttyACM0","        publish_rate_hz: 10",
+           '        publish_outputs: ["info"]',"        brightness: "+num(d.bright),
+           '        measmode: "off"');
+  });
+  grp("parsec", of("parsec"), d=>{
+    L.push("        transport: "+d.transport,"        can_id: "+num(d.canId),
+           "        serial_port: /dev/ttyACM0",'        frame_id: "'+d.name+'_link"',
+           "        publish_rate_hz: 15",'        publish_outputs: ["zones"]');
+  });
+
+  if(of("gamepad").length){
+    const d=of("gamepad")[0];
+    L.push("    gamepad:","      enabled: true",
+           "      axis_linear_x: "+num(d.ax),"      axis_linear_y: "+num(d.ay),
+           "      axis_angular_z: "+num(d.az),"      button_turbo: 5",
+           "      linear_scale: 1.0","      angular_scale: 1.0","      deadzone: 0.05",
+           "      turbo_multiplier: 2.0","      publish_rate: 50",
+           '      cmd_vel_topic: "cmd_vel"',"");
+  }
+
+  if(state.devices.length===0) L.push("    # no devices configured");
+  return L.join("\n");
+}
+
+/* ------------------------------ Python -----------------------------
+   Real rclpy against studica_control. Every topic, message type and
+   service below is from Studica's template / examples.
+-------------------------------------------------------------------- */
+function genPy(){
+  const L=[banner("#")];
+  const need=new Set(["import rclpy","from rclpy.node import Node"]);
+  const has=t=>of(t).length>0;
+  if(has("titan_motor")||has("servo")) need.add("from std_msgs.msg import Float64");
+  if(has("dio")) need.add("from std_msgs.msg import Bool");
+  if(has("cobra")) need.add("from std_msgs.msg import Float32");
+  if(has("imu")) need.add("from sensor_msgs.msg import Imu");
+  if(has("ultrasonic")||has("sharp")||has("parsec")) need.add("from sensor_msgs.msg import Range");
+  if(has("colore")) need.add("from std_msgs.msg import ColorRGBA");
+  if(has("gamepad")) need.add("from geometry_msgs.msg import Twist");
+  if(has("encoder")) need.add("from studica_control.msg import EncoderMsg");
+  if(has("duty_cycle")) need.add("from studica_control.msg import DutyCycleEncoderMsg");
+  need.add("from studica_control.srv import SetData");
+  L.push(...[...need], "", "",
+    "class RobotIO(Node):",
+    '    """Thin wrapper over studica_control topics.',
+    "",
+    "    Requires studica_launch.py running with the generated params.yaml.",
+    '    """',
+    "", "    def __init__(self):",
+    '        super().__init__("robot_io")');
+
+  const titans=of("titan_motor");
+  if(titans.length){
+    L.push("","        # --- Titan motors ---");
+    titans.forEach(d=>{
+      const n=lower(d.name), t="titan"+d.canId;
+      L.push("        self."+n+"_cmd = self.create_publisher(",
+             '            Float64, "/'+t+"/m_"+d.motor+'/cmd", 10)');
+      if(d.mode==="quadrature"){
+        L.push("        self."+n+"_enc = 0.0","        self."+n+"_rpm = 0.0",
+               "        self.create_subscription(Float64,",
+               '            "/'+t+"/m_"+d.motor+'/encoder",',
+               "            lambda m, k=\""+n+"\": setattr(self, k+\"_enc\", m.data), 10)",
+               "        self.create_subscription(Float64,",
+               '            "/'+t+"/m_"+d.motor+'/rpm",',
+               "            lambda m, k=\""+n+"\": setattr(self, k+\"_rpm\", m.data), 10)");
+      } else {
+        L.push("        self."+n+"_angle = 0.0",
+               "        self.create_subscription(Float64,",
+               '            "/'+t+"/m_"+d.motor+'/angle",',
+               "            lambda m, k=\""+n+"\": setattr(self, k+\"_angle\", m.data), 10)");
+      }
+    });
+    const cans=[...new Set(titans.map(d=>d.canId))];
+    cans.forEach(c=>L.push('        self.titan'+c+'_srv = self.create_client(SetData, "/titan'+c+'/titan_cmd")'));
+  }
+
+  of("servo").forEach(d=>{ const n=lower(d.name);
+    L.push("","        # --- servo "+d.name+" ("+d.kind+") ---",
+      "        self."+n+"_cmd = self.create_publisher(Float64, \"/"+d.name+"/cmd\", 10)",
+      "        self."+n+"_srv = self.create_client(SetData, \"/"+d.name+"/set_servo\")");
+  });
+  of("dio").forEach(d=>{ const n=lower(d.name);
+    L.push("","        # --- dio "+d.name+" ("+d.kind+", channel "+d.pin+") ---",
+      "        self."+n+" = False",
+      "        self.create_subscription(Bool, \"/"+d.name+"/state\",",
+      "            lambda m, k=\""+n+"\": setattr(self, k, m.data), 10)");
+    if(d.kind==="output")
+      L.push("        self."+n+"_cmd = self.create_publisher(Bool, \"/"+d.name+"/cmd\", 10)");
+  });
+  of("imu").forEach(d=>{ const n=lower(d.name);
+    L.push("","        # --- IMU ---","        self."+n+" = None",
+      "        self.create_subscription(Imu, \""+d.name+"\",",
+      "            lambda m, k=\""+n+"\": setattr(self, k, m), 10)",
+      "        self."+n+"_srv = self.create_client(SetData, \"/"+d.name+"/get_imu_data\")");
+  });
+  [["ultrasonic","range"],["sharp","range"],["parsec","min_range"]].forEach(([ty,topic])=>{
+    of(ty).forEach(d=>{ const n=lower(d.name);
+      L.push("","        # --- "+ty+" "+d.name+" ---","        self."+n+" = float(\"nan\")",
+        "        self.create_subscription(Range, \"/"+d.name+"/"+topic+"\",",
+        "            lambda m, k=\""+n+"\": setattr(self, k, m.range), 10)");
+    });
+  });
+  of("encoder").forEach(d=>{ const n=lower(d.name);
+    L.push("","        # --- encoder "+d.name+" ---","        self."+n+" = 0",
+      "        self.create_subscription(EncoderMsg, \""+d.name+"\",",
+      "            lambda m, k=\""+n+"\": setattr(self, k, m.count), 10)");
+  });
+  of("duty_cycle").forEach(d=>{ const n=lower(d.name);
+    L.push("","        # --- duty-cycle encoder "+d.name+" ---","        self."+n+" = 0.0",
+      "        self.create_subscription(DutyCycleEncoderMsg, \""+d.name+"\",",
+      "            lambda m, k=\""+n+"\": setattr(self, k, m.absolute_angle), 10)");
+  });
+  of("cobra").forEach(d=>{ const n=lower(d.name);
+    L.push("","        # --- cobra "+d.name+" (4 channels) ---","        self."+n+" = [0.0]*4");
+    for(let i=0;i<4;i++)
+      L.push("        self.create_subscription(Float32, \"/"+d.name+"/ch_"+i+"\",",
+             "            lambda m, k=\""+n+"\", i="+i+": self.__dict__[k].__setitem__(i, m.data), 10)");
+  });
+  of("colore").forEach(d=>{ const n=lower(d.name);
+    L.push("","        # --- colore "+d.name+" ---","        self."+n+" = None",
+      "        self.create_subscription(ColorRGBA, \"/"+d.name+"/color\",",
+      "            lambda m, k=\""+n+"\": setattr(self, k, m), 10)");
+  });
+  of("gamepad").forEach(()=>{
+    L.push("","        # --- gamepad -> cmd_vel (needs: ros2 run joy joy_node) ---",
+      "        self.cmd_vel = None",
+      "        self.create_subscription(Twist, \"cmd_vel\",",
+      "            lambda m: setattr(self, \"cmd_vel\", m), 10)");
+  });
+
+  if(titans.length){
+    L.push("","    # ------------------------------------------------------------",
+      "    def set_speed(self, pub, duty: float) -> None:",
+      '        """Duty cycle, -1.0 to 1.0."""',
+      "        msg = Float64()",
+      "        msg.data = max(-1.0, min(1.0, float(duty)))",
+      "        pub.publish(msg)");
+  }
+  if(of("servo").length){
+    L.push("","    def set_servo(self, pub, value: float) -> None:",
+      '        """standard: degrees -150..150 | continuous: -100..100 | linear: 0..100"""',
+      "        msg = Float64()","        msg.data = float(value)","        pub.publish(msg)");
+  }
+  if(of("dio").some(d=>d.kind==="output")){
+    L.push("","    def set_dio(self, pub, high: bool) -> None:",
+      "        msg = Bool()","        msg.data = bool(high)","        pub.publish(msg)");
+  }
+
+  L.push("","",'def main():',"    rclpy.init()","    node = RobotIO()",
+    "    try:","        rclpy.spin(node)","    except KeyboardInterrupt:","        pass",
+    "    finally:","        node.destroy_node()","        rclpy.shutdown()","","",
+    'if __name__ == "__main__":',"    main()");
+  return L.join("\n");
+}
+
+/* ------------------------- C++ / Java (WPILib) ---------------------
+   A DIFFERENT STACK from the ROS 2 route above - pick one. These
+   follow Studica's documented TitanQuad + WPILib patterns.
+-------------------------------------------------------------------- */
+function constLines(fmt){
+  const L=[];
+  known().forEach(d=>{ const N=UPPER(d.name);
+    switch(d.type){
+      case "titan_motor": L.push(fmt(N+"_CAN",d.canId), fmt(N+"_MOTOR",d.motor)); break;
+      case "servo":       L.push(fmt(N+"_PWM",d.port)); break;
+      case "dio":         L.push(fmt(N+"_DIO",d.pin)); break;
+      case "sharp":       L.push(fmt(N+"_AIN",d.port)); break;
+      case "duty_cycle":  L.push(fmt(N+"_CH",d.port)); break;
+      case "encoder":{ const p=VMX.encoderPairs[d.pair]||[0,1];
+        L.push(fmt(N+"_A",p[0]), fmt(N+"_B",p[1])); break; }
+      case "ultrasonic":  L.push(fmt(N+"_PING",d.ping), fmt(N+"_ECHO",d.echo)); break;
+    }});
+  return L;
+}
+
+function genCpp(){
+  const L=[banner("//")];
+  L.push("#pragma once","#include <studica/TitanQuad.h>","#include <studica/TitanQuadEncoder.h>",
+         "#include <frc/AnalogInput.h>","#include <frc/DigitalInput.h>",
+         "#include <frc/DigitalOutput.h>","#include <studica/Servo.h>","#include <frc/Encoder.h>",
+         "#include <AHRS.h>","","namespace ports {");
+  L.push(...constLines((k,v)=>"  constexpr int "+k+" = "+v+";"));
+  L.push("  constexpr int MOTOR_FREQ_HZ = 15600;   // Studica course default");
+  L.push("}","","// --- declarations ---");
+  known().forEach(d=>{ const n=lower(d.name), N=UPPER(d.name);
+    switch(d.type){
+      case "titan_motor":
+        L.push("studica::TitanQuad "+n+"{ports::"+N+"_CAN, ports::MOTOR_FREQ_HZ, ports::"+N+"_MOTOR};");
+        L.push("studica::TitanQuadEncoder "+n+"Enc{"+n+", ports::"+N+"_MOTOR, "+(+d.dpt||1)+"};");
+        if(d.invert) L.push("// "+n+" INVERTED - negate before Set()");
+        break;
+      case "servo":      L.push("studica::Servo "+n+"{ports::"+N+"_PWM};   // SetAngle(deg), not Set(0..1)"); break;
+      case "dio":        L.push(d.kind==="input"
+                            ? "frc::DigitalInput "+n+"{ports::"+N+"_DIO};"
+                            : "frc::DigitalOutput "+n+"{ports::"+N+"_DIO};"); break;
+      case "sharp":      L.push("frc::AnalogInput "+n+"{ports::"+N+"_AIN};"); break;
+      case "encoder":    L.push("frc::Encoder "+n+"{ports::"+N+"_A, ports::"+N+"_B};"); break;
+      case "ultrasonic":
+        L.push("frc::DigitalOutput "+n+"Ping{ports::"+N+"_PING};",
+               "frc::DigitalInput  "+n+"Echo{ports::"+N+"_ECHO};"); break;
+      case "imu":        L.push("AHRS "+n+"{frc::SPI::Port::kMXP};"); break;
+    }});
+  return L.join("\n");
+}
+
+function genJava(){
+  const L=[banner("//")];
+  L.push("import com.studica.frc.TitanQuad;","import com.studica.frc.TitanQuadEncoder;",
+         "import com.studica.frc.AHRS;","import edu.wpi.first.wpilibj.*;","",
+         "public final class Ports {");
+  L.push(...constLines((k,v)=>"  public static final int "+k+" = "+v+";"));
+  L.push("  public static final int MOTOR_FREQ_HZ = 15600;");
+  L.push("}","","// --- declarations ---");
+  known().forEach(d=>{ const n=lower(d.name), N=UPPER(d.name);
+    switch(d.type){
+      case "titan_motor":
+        L.push("private final TitanQuad "+n+" = new TitanQuad(Ports."+N+"_CAN, Ports.MOTOR_FREQ_HZ, Ports."+N+"_MOTOR);",
+               "private final TitanQuadEncoder "+n+"Enc = new TitanQuadEncoder("+n+", Ports."+N+"_MOTOR, "+(+d.dpt||1)+");");
+        if(d.invert) L.push("// "+n+" INVERTED - negate before set()");
+        break;
+      case "servo":     L.push("private final com.studica.frc.Servo "+n+" = new com.studica.frc.Servo(Ports."+N+"_PWM);   // setAngle(deg)"); break;
+      case "dio":       L.push(d.kind==="input"
+                          ? "private final DigitalInput "+n+" = new DigitalInput(Ports."+N+"_DIO);"
+                          : "private final DigitalOutput "+n+" = new DigitalOutput(Ports."+N+"_DIO);"); break;
+      case "sharp":     L.push("private final AnalogInput "+n+" = new AnalogInput(Ports."+N+"_AIN);"); break;
+      case "encoder":   L.push("private final Encoder "+n+" = new Encoder(Ports."+N+"_A, Ports."+N+"_B);"); break;
+      case "ultrasonic":
+        L.push("private final DigitalOutput "+n+"Ping = new DigitalOutput(Ports."+N+"_PING);",
+               "private final DigitalInput  "+n+"Echo = new DigitalInput(Ports."+N+"_ECHO);"); break;
+      case "imu":       L.push("private final AHRS "+n+" = new AHRS(SPI.Port.kMXP);"); break;
+    }});
+  return L.join("\n");
+}
+
+const GEN={
+  yaml:{label:"params.yaml",fn:genYaml},
+  py:{label:"Python (ROS 2)",fn:genPy},
+  cpp:{label:"C++ (WPILib)",fn:genCpp},
+  java:{label:"Java (WPILib)",fn:genJava},
+};
+
+/* ------------------------------ render ------------------------------ */
+const $=id=>document.getElementById(id);
+
+function render(){
+  save();
+  $("robotName").value=state.robot||"";
+  const v=validate();
+
+  const host=$("devices"); host.innerHTML="";
+  if(!state.devices.length)
+    host.innerHTML='<div class="empty">No devices. Pick a type above and press <b>Add device</b>.</div>';
+  state.devices.forEach((d,i)=>{
+    const t=TYPES[d.type]||{label:"unknown ("+d.type+")",fields:[]};
+    const el=document.createElement("div");
+    el.className="dev"+(v.bad.has(d.id)?" bad":"");
+    const head=document.createElement("div"); head.className="dev-head";
+    const nm=document.createElement("input"); nm.className="nm"; nm.value=d.name;
+    // Typing only stores the value; the list is rebuilt when you leave the box
+    // (rebuilding on every key stole the cursor and made editing impossible).
+    nm.oninput=()=>{ d.name=nm.value; save(); };
+    nm.onchange=()=>render();
+    const kind=document.createElement("span"); kind.className="kind"; kind.textContent=t.label;
+    const up=document.createElement("button"); up.textContent="↑";
+    up.onclick=()=>{ if(i>0){ const a=state.devices; [a[i-1],a[i]]=[a[i],a[i-1]]; render(); } };
+    const del=document.createElement("button"); del.className="danger"; del.textContent="✕";
+    del.onclick=()=>{ state.devices.splice(i,1); render(); };
+    if(ROLES[d.type]){
+      if(d.role===undefined) d.role=guessRole(d);
+      const rs=document.createElement("select"); rs.title="What this device is on the robot (used by Send to robot)";
+      ROLES[d.type].forEach(([v,tx])=>{ const o=document.createElement("option"); o.value=v; o.textContent=tx; rs.append(o); });
+      rs.value=d.role||""; rs.onchange=()=>{ d.role=rs.value; render(); };
+      const rl=document.createElement("span"); rl.className="kind"; rl.textContent="Robot role:";
+      head.append(nm,kind,rl,rs,up,del);
+      if(d.type==="servo"){ const pwm=vmxToPwm(d.port); const sp=document.createElement("span"); sp.className="kind";
+        sp.textContent = pwm===null ? "not a servo pin" : (d.port>=12 ? "needs HiCurrDIO jumper" : ""); head.insertBefore(sp,up); }
+    } else head.append(nm,kind,up,del);
+    el.append(head);
+    if(t.fields.length){
+      const fs=document.createElement("div"); fs.className="fields";
+      t.fields.forEach(f=>{
+        const w=document.createElement("div"); w.className="f";
+        const lb=document.createElement("label"); lb.textContent=f.label;
+        let inp;
+        if(f.t==="bool"||f.t==="enum"){
+          inp=document.createElement("select");
+          const opts=f.t==="bool"?[["true","Yes"],["false","No"]]:f.opts.map(o=>[o,o]);
+          opts.forEach(([val,tx])=>{ const o=document.createElement("option");
+            o.value=val; o.textContent=tx; inp.append(o); });
+          inp.value=f.t==="bool"?String(!!d[f.k]):d[f.k];
+          inp.onchange=()=>{ d[f.k]=f.t==="bool"?(inp.value==="true"):inp.value; render(); };
+        } else {
+          inp=document.createElement("input"); inp.type="number";
+          if(f.step) inp.step=f.step;
+          inp.value=d[f.k];
+          inp.oninput=()=>{ d[f.k]=inp.value===""?0:+inp.value; save(); };
+          inp.onchange=()=>render();
+        }
+        w.append(lb,inp); fs.append(w);
+      });
+      el.append(fs);
+    }
+    host.append(el);
+  });
+
+  const ck=$("checks"); ck.innerHTML="";
+  if(!v.msgs.length) ck.innerHTML='<div class="empty">Add devices to see checks.</div>';
+  v.msgs.forEach(m=>{
+    const el=document.createElement("div"); el.className="msg "+m.lvl;
+    const b=document.createElement("b"); b.textContent=m.who;
+    const s=document.createElement("span"); s.textContent=m.text;
+    el.append(b,s); ck.append(el);
+  });
+
+  const pm=$("pinmap"); pm.innerHTML="";
+  VMX.chanBanks.forEach(bank=>{
+    const wrap=document.createElement("div"); wrap.className="bank";
+    const h=document.createElement("h3");
+    h.textContent=bank.name+"  ("+bank.from+"–"+bank.to+")";
+    const pins=document.createElement("div"); pins.className="pins";
+    for(let p=bank.from;p<=bank.to;p++){
+      const el=document.createElement("div");
+      const users=v.chanUse[p]||[];
+      el.className="pin"+(v.clash.has(p)?" clash":(users.length?" used":""));
+      el.textContent=p;
+      el.title=users.length?users.map(u=>u.name).join(", "):"free";
+      pins.append(el);
+    }
+    wrap.append(h,pins); pm.append(wrap);
+  });
+
+  const tb=$("tabs"); tb.innerHTML="";
+  Object.entries(GEN).forEach(([k,g])=>{
+    const b=document.createElement("button");
+    b.textContent=g.label; if(k===lang) b.className="on";
+    b.onclick=()=>{ lang=k; render(); };
+    tb.append(b);
+  });
+  $("code").textContent=GEN[lang].fn();
+}
+
+/* ---------------------------- robot shape ----------------------------
+   One place that knows what each robot shape is made of. Picking a shape
+   builds the matching device list, so the channel map and the generated
+   code always agree with the mechanical build.
+---------------------------------------------------------------------- */
+const WHEELS={
+  mecanum4:["frontLeft","frontRight","rearLeft","rearRight"],
+  omni3:["back","left","right"],
+  omni4:["frontLeft","rearLeft","rearRight","frontRight"],
+  diff2:["left","right"],
+};
+const SHAPE_NOTES={
+  mecanum4:"Holonomic: can strafe. Four Titan channels.",
+  omni3:"Holonomic, three wheels at 90/210/330 - the Studica course layout.",
+  omni4:"Holonomic, four omni wheels in an X.",
+  diff2:"NOT holonomic - it cannot strafe. Strafe actions will refuse.",
+};
+const MANIP_NOTES={
+  none:"Drive only. No gripper, lift or extension.",
+  gripper_only:"A gripper at a fixed height.",
+  lift_only:"Vertical lift plus gripper - one extra Titan channel and a servo.",
+  lift_extend:"Lift, horizontal extension and gripper - two extra Titan channels "+
+              "and a servo. About 10 s per delivery faster in simulation, because "+
+              "the arm reaches into the shelf instead of the whole robot driving in.",
+};
+
+function applyShape(){
+  const dt=$("shDrive").value, mp=$("shManip").value;
+  const wheels=WHEELS[dt]||[];
+  const motors=wheels.length + (mp==="lift_only"?1:0) + (mp==="lift_extend"?2:0);
+  if(motors>4){
+    alert("A single Titan drives 4 motors. "+dt+" + "+mp+" needs "+motors+
+          ".\nAdd a second Titan (a different CAN ID) after building the list.");
+  }
+  if(state.devices.length && !confirm("Replace the current device list?")) return;
+
+  state.devices=[]; nextId=1;
+  let m=0;
+  wheels.forEach(n=>{ const d=addDevice("titan_motor"); d.name=n; d.motor=m%4;
+    d.canId = 42 + Math.floor(m/4); m++; });
+  if(mp==="lift_only"||mp==="lift_extend"){
+    const d=addDevice("titan_motor"); d.name="lift"; d.motor=m%4;
+    d.canId=42+Math.floor(m/4); m++;
+  }
+  if(mp==="lift_extend"){
+    const d=addDevice("titan_motor"); d.name="extend"; d.motor=m%4;
+    d.canId=42+Math.floor(m/4); m++;
+  }
+  // Servo default 14, matching Studica's own params_template.yaml. NOT 8:
+  // that would collide with the start button on DIO 8 under our one-
+  // channel-space model. See the caveat below the pin map.
+  if(mp!=="none"){ const d=addDevice("servo"); d.name="gripper"; d.port=14; d.kind="standard"; }
+
+  // the control panel the CID assumes: G.2.1 step 3 and step 6
+  let d;
+  d=addDevice("dio"); d.name="startButton"; d.pin=8;  d.kind="input";
+  d=addDevice("dio"); d.name="stopButton";  d.pin=9;  d.kind="input";
+  d=addDevice("dio"); d.name="runningLed";  d.pin=13; d.kind="output";
+  d=addDevice("dio"); d.name="stoppedLed";  d.pin=12; d.kind="output";
+  addDevice("imu");
+  addDevice("gamepad");
+  S_shape={drivetrain:dt,manipulator:mp};
+  try{ localStorage.setItem("studica.shape.v1",JSON.stringify(S_shape)); }catch(e){}
+  render(); shapeNote();
+}
+
+let S_shape={drivetrain:"mecanum4",manipulator:"lift_only"};
+try{ const r=localStorage.getItem("studica.shape.v1");
+     if(r) S_shape=Object.assign(S_shape,JSON.parse(r)); }catch(e){}
+
+function shapeNote(){
+  const dt=$("shDrive").value, mp=$("shManip").value;
+  const motors=(WHEELS[dt]||[]).length+(mp==="lift_only"?1:0)+(mp==="lift_extend"?2:0);
+  $("shNote").innerHTML=
+    "<b>"+dt+"</b> "+SHAPE_NOTES[dt]+"<br><b>"+mp+"</b> "+MANIP_NOTES[mp]+
+    "<br>Needs <b>"+motors+"</b> Titan motor channel"+(motors===1?"":"s")+
+    (motors>4?" &mdash; more than one Titan can drive; add a second CAN ID."
+             :" (one Titan drives 4).")+
+    "<br>Matching Python: <code>presets.for_robot(\""+dt+"\", \""+mp+"\")</code>";
+}
+
+/* ------------------------------ wiring ------------------------------ */
+Object.entries(TYPES).forEach(([k,t])=>{
+  const o=document.createElement("option"); o.value=k; o.textContent=t.label;
+  $("addType").append(o);
+});
+$("addBtn").onclick=()=>{ addDevice($("addType").value); render(); };
+$("sendBtn").onclick=sendToRobot;
+$("loadRobotBtn").onclick=loadFromRobot;
+(function(){ try{ const r=JSON.parse(localStorage.getItem("studica.portplanner.robot")||"{}");
+  if(r.host) $("rHost").value=r.host; if(r.port) $("rPort").value=r.port; }catch(e){}
+  const q=new URLSearchParams(location.search); if(q.get("host")) $("rHost").value=q.get("host"); if(q.get("port")) $("rPort").value=q.get("port"); })();
+["rHost","rPort"].forEach(id=>$(id).oninput=()=>{ try{ localStorage.setItem("studica.portplanner.robot",JSON.stringify({host:$("rHost").value,port:$("rPort").value})); }catch(e){} });
+$("shApply").onclick=applyShape;
+$("shDrive").onchange=shapeNote;
+$("shManip").onchange=shapeNote;
+$("robotName").oninput=e=>{ state.robot=e.target.value; save(); render(); };
+$("clearBtn").onclick=()=>{ if(confirm("Remove all devices?")){
+  state.devices=[]; nextId=1; render(); } };
+$("copyBtn").onclick=()=>{
+  const t=GEN[lang].fn();
+  navigator.clipboard?.writeText(t).then(
+    ()=>{ $("copyBtn").textContent="Copied"; setTimeout(()=>$("copyBtn").textContent="Copy to clipboard",1200); },
+    ()=>alert("Clipboard blocked — select the text and copy manually."));
+};
+$("exportBtn").onclick=()=>{
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=ident(state.robot||"robot")+"_ports.json"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+};
+$("importBtn").onclick=()=>$("fileIn").click();
+$("fileIn").onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ const s=JSON.parse(r.result);
+      if(!s||!Array.isArray(s.devices)) throw 0;
+      state=s; nextId=Math.max(0,...state.devices.map(d=>d.id||0))+1; render();
+    }catch(_){ alert("That is not a Port Planner file."); } };
+  r.readAsText(f); e.target.value="";
+};
+
+load();
+$("shDrive").value=S_shape.drivetrain;
+$("shManip").value=S_shape.manipulator;
+shapeNote();
+if(!state.devices.length){
+  ["frontLeft","frontRight","rearLeft","rearRight"].forEach((n,i)=>{
+    const d=addDevice("titan_motor"); d.name=n; d.motor=i;
+  });
+  addDevice("imu"); addDevice("gamepad");
+}
+render();
+</script>
+<script id="hubnav-js">
+/* Keep the shared robot address up to date and carry it on every menu link. */
+(function(){
+  var K="studica.robot", H=["host","rHost"], P=["port","rPort"];
+  function el(ids){ for(var i=0;i<ids.length;i++){ var e=document.getElementById(ids[i]); if(e) return e; } return null; }
+  function cur(){
+    var h=el(H), p=el(P), r=null;
+    try{ r=JSON.parse(localStorage.getItem(K)||"null"); }catch(e){}
+    return { host:(h&&h.value.trim())||(r&&r.host)||"", port:(p&&p.value.trim())||(r&&r.port)||"5800" };
+  }
+  function store(){ var c=cur(); if(c.host){ try{ localStorage.setItem(K,JSON.stringify(c)); }catch(e){} } }
+  [el(H),el(P)].forEach(function(e){ if(e){ e.addEventListener("input",store); e.addEventListener("change",store); } });
+  store();
+  document.querySelectorAll('#hubnav a').forEach(function(a){
+    a.addEventListener("click",function(){ var c=cur(); if(!c.host) return;
+      var base=a.getAttribute("href").split("?")[0];
+      a.href=base+"?host="+encodeURIComponent(c.host)+"&port="+encodeURIComponent(c.port); });
+  });
+})();
+</script>
+</body>
+</html>

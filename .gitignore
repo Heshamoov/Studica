@@ -1,0 +1,16 @@
+.venv/
+old/
+*.stp
+*.zip
+desktop.ini
+__pycache__/
+*.pyc
+robot-onboard/build/
+robot-onboard/robot
+robot-onboard/logs/
+robot-onboard/settings.cfg
+cad/*.step
+cad/*.stl
+cad/stl/
+cad/vendor_step/
+dist/

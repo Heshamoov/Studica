@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot</title>
+<style>body{font-family:"Segoe UI",system-ui,Arial;margin:0;background:#eef2f7}#boot{padding:40px;font-size:20px;color:#444}</style>
+</head>
+<body>
+<div id="boot">Loading…</div>
+<script id="builtin-data" type="application/json">/*BUILTIN_JSON*/</script>
+<script>
+/* START HERE.html — the loader.
+   It shows the newest dashboard it has: either the copy built into this file,
+   or a newer copy downloaded by the Update button (kept in the browser's own
+   storage). The dashboard and the robot program files travel together, so
+   the dashboard can also update the robot.                                   */
+(function(){
+  const RAW_DEFAULT = "/*RAW_BASE*/";
+  const DBN = "studica-updates", KEY = "bundle";
+  const text = s => s;
+  // ---- tiny IndexedDB wrapper (falls back to localStorage) ----
+  function idb(){
+    return new Promise((res) => {
+      try{
+        const r = indexedDB.open(DBN, 1);
+        r.onupgradeneeded = () => r.result.createObjectStore("kv");
+        r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null);
+      }catch(e){ res(null); }
+    });
+  }
+  async function kvGet(k){
+    const db = await idb();
+    if(db) return new Promise(res => { try{ const t = db.transaction("kv").objectStore("kv").get(k); t.onsuccess = () => res(t.result || null); t.onerror = () => res(null); }catch(e){ res(null); } });
+    try{ return JSON.parse(localStorage.getItem(DBN + ":" + k) || "null"); }catch(e){ return null; }
+  }
+  async function kvSet(k, v){
+    const db = await idb();
+    if(db) return new Promise(res => { try{ const t = db.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k); t.oncomplete = () => res(true); t.onerror = () => res(false); }catch(e){ res(false); } });
+    try{ localStorage.setItem(DBN + ":" + k, JSON.stringify(v)); return true; }catch(e){ return false; }
+  }
+  async function kvDel(k){
+    const db = await idb();
+    if(db) return new Promise(res => { try{ const t = db.transaction("kv", "readwrite"); t.objectStore("kv").delete(k); t.oncomplete = () => res(true); t.onerror = () => res(false); }catch(e){ res(false); } });
+    try{ localStorage.removeItem(DBN + ":" + k); }catch(e){} return true;
+  }
+  const b64 = buf => { let s = "", u = new Uint8Array(buf); for(let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+  const unb64 = s => { const b = atob(s), u = new Uint8Array(b.length); for(let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+
+  // ---- mount an html file from the active bundle into this document ----
+  function mount(files, path){
+    const f = files[path];
+    if(!f){ document.getElementById("boot").textContent = "Missing: " + path; return; }
+    if(f.t === "b64"){
+      const mime = /\.pdf$/i.test(path) ? "application/pdf" : "application/octet-stream";
+      location.replace(URL.createObjectURL(new Blob([unb64(f.d)], {type: mime}))); return;
+    }
+    let html = f.d;
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+    if(dir) html = html.replace(/<head([^>]*)>/i, '<head$1><base href="' + dir + '">');
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    document.replaceChild(document.adoptNode(doc.documentElement), document.documentElement);
+    document.querySelectorAll("script").forEach(s => {
+      const n = document.createElement("script");
+      [...s.attributes].forEach(a => n.setAttribute(a.name, a.value));
+      n.textContent = s.textContent; s.replaceWith(n);
+    });
+  }
+
+  (async function(){
+    let builtin = {version: "", date: "", files: {}};
+    try{ builtin = JSON.parse(document.getElementById("builtin-data").textContent); }catch(e){}
+    let raw = RAW_DEFAULT; try{ raw = localStorage.getItem("studica.raw") || raw; }catch(e){}
+    let bundle = await kvGet(KEY);
+    if(bundle && !(bundle.files && bundle.files["BEGINNER-GUIDE.html"])) bundle = null;
+    const useBundle = !!(bundle && bundle.date && bundle.date > (builtin.date || ""));
+    const active = useBundle ? bundle : builtin;
+
+    window.loader = {
+      version: active.version, date: active.date, notes: active.notes || "", source: useBundle ? "update" : "built-in",
+      builtin: {version: builtin.version, date: builtin.date}, raw,
+      files: active.files,
+      robotVersion(){ const f = active.files["robot-onboard/VERSION"]; return f ? f.d.trim() : ""; },
+      robotFiles(){ return Object.entries(active.files).filter(([p]) => p.startsWith("robot-onboard/")).map(([p, f]) => [p.slice("robot-onboard/".length), f]); },
+      async check(){
+        const r = await fetch(raw + "version.json?t=" + Date.now(), {cache: "no-store"});
+        if(!r.ok) throw new Error("no version.json");
+        const v = await r.json();
+        v.available = !!(v.date && v.date > (active.date || ""));
+        try{ const c = await fetch(raw + "config.json?t=" + Date.now(), {cache: "no-store"}); if(c.ok) v.config = await c.json(); }catch(e){}
+        return v;
+      },
+      async update(progress){
+        const v = await this.check();
+        const m = await (await fetch(raw + "manifest.json?t=" + Date.now(), {cache: "no-store"})).json();
+        const files = {}; let i = 0;
+        for(const e of m.files){
+          const r = await fetch(raw + e.path.split("/").map(encodeURIComponent).join("/") + "?v=" + encodeURIComponent(m.version), {cache: "no-store"});
+          if(!r.ok) throw new Error("download failed: " + e.path);
+          files[e.path] = e.type === "b64" ? {t: "b64", d: b64(await r.arrayBuffer())} : {t: "text", d: await r.text()};
+          if(progress) progress(++i, m.files.length, e.path);
+        }
+        if(!files["BEGINNER-GUIDE.html"]) throw new Error("bad bundle");
+        const ok = await kvSet(KEY, {version: m.version, date: m.date, notes: v.notes || "", files});
+        if(!ok) throw new Error("could not save");
+        return m.version;
+      },
+      async reset(){ await kvDel(KEY); location.reload(); },
+      open(path){ location.href = location.pathname + "?open=" + encodeURIComponent(path); },
+    };
+    const q = new URLSearchParams(location.search).get("open");
+    mount(active.files, q && active.files[q] ? q : "BEGINNER-GUIDE.html");
+  })();
+})();
+</script>
+</body>
+</html>

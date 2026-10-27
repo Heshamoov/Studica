@@ -1,0 +1,5 @@
+{
+  "report_url": "",
+  "fields": {"robot": "entry.0", "message": "entry.0"},
+  "_help": "Problem reports: create a Google Form with two short-answer questions (Robot, Message). Put its formResponse URL in report_url and the two entry.NNN ids in fields. Empty report_url = students copy the report by hand."
+}
