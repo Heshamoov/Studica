@@ -128,6 +128,7 @@ select.big{font:inherit;font-weight:700;padding:9px 10px;border-radius:10px;bord
 .edge .ch .q{color:#1d5fd6;display:block;text-align:center;font-size:11px;margin-top:2px}
 .edge .mark{position:absolute;width:3.4%;height:30%;border:3px solid #ffcc00;border-radius:10px;transform:translateX(-50%);box-sizing:border-box}
 nav a.small.alert{background:#fff3c4;color:#7a4600}
+nav a.small.here{background:var(--blue);color:#fff}
 .ver{font-size:14px;color:var(--muted)}
 .updbox{border:2px solid var(--line);border-radius:14px;padding:16px;margin:10px 0}
 .updbox.new{border-color:#e0a000;background:#fff8e1}
@@ -1109,7 +1110,8 @@ async function repCopy(){
   const r = await repBuild($("repTxt").value.trim() || "(no note)");
   try{ await navigator.clipboard.writeText(repText(r)); $("repRes").textContent = "✅ Copied · paste it to your teacher"; }catch(e){ $("repRes").textContent = "Could not copy"; }
 }
-function repBadge(){ const n = repQueue().length; if(n && !$("navUpd").classList.contains("alert")) $("navUpd").textContent = "🔄 Update · " + n + " report" + (n > 1 ? "s" : "") + " waiting"; }
+function repBadge(){ if($("navUpd").classList.contains("alert")) return; const n = repQueue().length;
+  $("navUpd").textContent = n ? "🔄 " + n + " report" + (n > 1 ? "s" : "") + " waiting" : "🔄 Update"; }
 setInterval(repBadge, 5000);
 updShow(); updCheck(false); setInterval(() => updCheck(false), 10 * 60 * 1000);
 // when running from START HERE.html, open the extra pages through it (so they are the updated copies)
