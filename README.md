@@ -9,6 +9,12 @@
 - **Teacher:** edit files in this repo (dashboard = `BEGINNER-GUIDE.html`, robot program = `robot-onboard/`), commit, push to `main`.
   GitHub Actions builds the `dist` branch automatically (≈1 min). `config.json` holds the problem-report form URL.
 - **New robot (once):** `SETUP-ROBOT (teacher, once per robot).bat` from a laptop on the robot's Wi-Fi.
+- **Problem reports → GitHub Issues:** students press *Send to teacher*; the report (team name from the robot's Wi-Fi,
+  robot state, settings, logs) is queued and sent when the laptop has internet. It needs a tiny relay (free Cloudflare Worker):
+  1. GitHub → Settings → Developer settings → Fine-grained tokens → repo `Studica`, permission **Issues: read & write**. Copy the token.
+  2. workers.cloudflare.com → Create Worker → paste `build/report-worker.js` → Deploy → Settings → Variables:
+     `REPO = Heshamoov/Studica`, secret `GITHUB_TOKEN = <token>`. Copy the worker URL.
+  3. Put that URL in `config.json` → `report_url`, push. Each report becomes an Issue labelled with the team name.
 
 
 Team workspace. Hardware: Studica kit, VMX-pi + Titan Quad, mecanum drive,

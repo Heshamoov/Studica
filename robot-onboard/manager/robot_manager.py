@@ -220,6 +220,23 @@ def version():
         return ""
 
 
+def robot_name():
+    """Team name = the robot's Wi-Fi name (hostapd ssid), else the hostname."""
+    for path in ("/etc/hostapd/hostapd.conf", "/etc/hostapd.conf"):
+        try:
+            with open(path) as f:
+                for line in f:
+                    if line.strip().startswith("ssid="):
+                        return line.strip()[5:].strip()
+        except OSError:
+            pass
+    try:
+        import socket
+        return socket.gethostname()
+    except Exception:
+        return ""
+
+
 def status():
     with lock:
         building = state["building"]
@@ -227,6 +244,7 @@ def status():
         return {
             "manager": True,
             "version": version(),
+            "name": robot_name(),
             "running": robot_running(),
             "building": building,
             "build_ok": state["build_ok"],

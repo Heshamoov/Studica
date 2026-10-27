@@ -135,7 +135,7 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
 </style>
 </head>
 <body>
-<header><h1>🤖 Robot</h1><button class="red" style="padding:8px 22px" onclick="estop()">■ STOP</button><span class="pill" id="pill">Not connected</span></header>
+<header><h1>🤖 Robot <span id="teamName" class="ver" style="color:#cfe0ff;font-size:16px"></span></h1><button class="red" style="padding:8px 22px" onclick="estop()">■ STOP</button><span class="pill" id="pill">Not connected</span></header>
 
 <nav>
   <a href="#" data-v="settings">⚙️ Settings</a>
@@ -324,7 +324,7 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
     <div class="btns"><button class="go" id="updRobotBtn" onclick="updRobot()">⬆ Update robot</button></div>
     <div class="result" id="updRobotRes"></div>
   </div>
-  <div class="updbox"><b>Report a problem</b>
+  <div class="updbox"><b>Report a problem</b> <span class="ver">· sent as your team name, with the robot's log</span>
     <textarea id="repTxt" placeholder="What happened? What did you expect?"></textarea>
     <div class="btns"><button class="go" onclick="repSend()">📨 Send to teacher</button><button onclick="repCopy()">Copy report</button></div>
     <div class="result" id="repRes"></div>
@@ -355,7 +355,8 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
 <script>
 const $ = id => document.getElementById(id);
 const K = "studica.robot";
-let host = "10.12.34.2", prog = "5800";
+let host = "10.12.34.2", prog = "5800", team = "";
+try{ team = localStorage.getItem("studica.team") || ""; }catch(e){}
 try{ const r = JSON.parse(localStorage.getItem(K) || "null"); if(r && r.host){ host = r.host; prog = r.port || "5800"; } }catch(e){}
 $("host").value = host;
 function saveHost(){ host = $("host").value.trim() || "10.12.34.2"; try{ localStorage.setItem(K, JSON.stringify({host, port:prog})); }catch(e){} }
@@ -434,6 +435,8 @@ async function poll(){
   }
   $("bRestart").disabled = !mgrOK || !!(m && m.building);
   updRobotCheck(m);
+  if(m && m.name && m.name !== team){ team = m.name; try{ localStorage.setItem("studica.team", team); }catch(e){} }
+  $("teamName").textContent = team ? "· " + team : "";
   $("howto").style.display = ready ? "none" : "";
   $("pill").textContent = ready ? "Ready" : on ? "Connected" : "Not connected";
   $("pill").className = "pill " + (ready ? "ok" : on ? "wait" : "");
@@ -1029,7 +1032,7 @@ async function updCheck(manual){
       if(manual) $("updRes").textContent = "✅ You have the latest version";
       $("updGo").style.display = "none"; $("navUpd").textContent = "🔄 Update"; $("navUpd").classList.remove("alert");
     }
-    repFlush();
+    repFlush(false);
   }catch(e){ if(manual) $("updRes").textContent = "No internet here. Connect to a Wi-Fi with internet and try again."; }
 }
 async function updGo(){
@@ -1067,37 +1070,47 @@ async function updRobot(){
   }catch(e){ $("updRobotRes").textContent = "❌ Robot not reachable"; }
   $("updRobotBtn").disabled = false;
 }
-// ---- problem reports: queued on this laptop, sent when internet is available
+// ---- problem reports: collected now (robot log + state), sent to the teacher (GitHub) when the laptop has internet
 const RQ = "studica.reports";
 function repQueue(){ try{ return JSON.parse(localStorage.getItem(RQ) || "[]"); }catch(e){ return []; } }
+function repSave(q){ try{ localStorage.setItem(RQ, JSON.stringify(q.slice(-10))); }catch(e){} }
 async function repBuild(note){
-  let state = null, log = ""; try{ state = await P("/state"); }catch(e){} try{ log = await M("/log?name=run&lines=60"); }catch(e){}
-  return {time: new Date().toISOString(), robot: host, version: L ? L.version : "file", robotVersion: robotVer, note, state, log};
+  let state = null, log = "", buildLog = "", settings = null, manager = null;
+  try{ state = await P("/state"); }catch(e){}
+  try{ settings = (await P("/settings")).settings.map(x => x.key + "=" + x.value); }catch(e){}
+  try{ manager = await M("/status"); }catch(e){}
+  try{ log = await M("/log?name=run&lines=120"); }catch(e){}
+  try{ buildLog = await M("/log?name=build&lines=40"); }catch(e){}
+  if(!team){ team = prompt("Your team name (as on the robot's Wi-Fi):", "Team1") || "unknown"; try{ localStorage.setItem("studica.team", team); }catch(e){} }
+  return {team, time: new Date().toISOString(), robot: host, version: L ? L.version : "file", robotVersion: robotVer, note, state, settings, manager, log, buildLog};
 }
-function repText(r){ return "Robot " + r.robot + " · " + r.time + " · v" + r.version + " · robot v" + r.robotVersion + "\n\n" + r.note + "\n\nSTATE: " + JSON.stringify(r.state) + "\n\nLOG:\n" + r.log; }
+function repText(r){ return "[" + r.team + "] " + r.time + " · dashboard " + r.version + " · robot " + r.robotVersion + "\n\n" + r.note + "\n\nSTATE: " + JSON.stringify(r.state) + "\n\nSETTINGS: " + JSON.stringify(r.settings) + "\n\nLOG:\n" + r.log + "\n\nBUILD:\n" + r.buildLog; }
 async function repSend(){
   const note = $("repTxt").value.trim(); if(!note){ $("repRes").textContent = "Write what happened first"; return; }
-  const r = await repBuild(note); const q = repQueue(); q.push(r); try{ localStorage.setItem(RQ, JSON.stringify(q.slice(-20))); }catch(e){}
-  $("repTxt").value = ""; $("repRes").textContent = "Saved · it is sent when the laptop has internet";
-  repFlush();
+  $("repRes").textContent = "Collecting the robot's log…";
+  const r = await repBuild(note); const q = repQueue(); q.push(r); repSave(q); $("repTxt").value = "";
+  await repFlush(true);
 }
-async function repFlush(){
-  const q = repQueue(); if(!q.length || !ucfg.report_url) return;
-  const left = [];
+async function repFlush(manual){
+  const q = repQueue(); if(!q.length) return;
+  if(!ucfg.report_url){ try{ ucfg = (await L.check()).config || ucfg; }catch(e){} }
+  if(!ucfg.report_url){ $("repRes").textContent = (manual ? "Saved. " : "") + q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again, or use Copy report."; return; }
+  const left = []; let sent = 0, url = "";
   for(const r of q){
     try{
-      const fd = new URLSearchParams(); const F = ucfg.fields || {};
-      fd.set(F.robot || "entry.robot", r.robot + " · v" + r.version); fd.set(F.message || "entry.message", repText(r));
-      await fetch(ucfg.report_url, {method: "POST", mode: "no-cors", body: fd});
+      const res = await fetch(ucfg.report_url, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(r)});
+      const j = await res.json(); if(!j.ok) throw 0; sent++; url = j.url || "";
     }catch(e){ left.push(r); }
   }
-  try{ localStorage.setItem(RQ, JSON.stringify(left)); }catch(e){}
-  if(q.length && !left.length) $("repRes").textContent = "✅ Sent to the teacher";
+  repSave(left);
+  $("repRes").textContent = sent ? "✅ Sent to the teacher" + (left.length ? " · " + left.length + " still waiting" : "") : q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again.";
 }
 async function repCopy(){
   const r = await repBuild($("repTxt").value.trim() || "(no note)");
   try{ await navigator.clipboard.writeText(repText(r)); $("repRes").textContent = "✅ Copied · paste it to your teacher"; }catch(e){ $("repRes").textContent = "Could not copy"; }
 }
+function repBadge(){ const n = repQueue().length; if(n && !$("navUpd").classList.contains("alert")) $("navUpd").textContent = "🔄 Update · " + n + " report" + (n > 1 ? "s" : "") + " waiting"; }
+setInterval(repBadge, 5000);
 updShow(); updCheck(false); setInterval(() => updCheck(false), 10 * 60 * 1000);
 // when running from START HERE.html, open the extra pages through it (so they are the updated copies)
 if(L) document.querySelectorAll('a[href^="tools/"],a[href^="docs/"]').forEach(a => { const p = a.getAttribute("href"); a.href = "#"; a.onclick = e => { e.preventDefault(); L.open(p); }; });
