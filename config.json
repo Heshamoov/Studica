@@ -1,4 +1,4 @@
 {
-  "report_url": "",
+  "report_url": "https://studica-reports.hesham-alatrash.workers.dev/",
   "_help": "Problem reports -> GitHub Issues. Deploy build/report-worker.js on Cloudflare Workers (free), then paste the worker URL here. Empty = students use 'Copy report'."
 }
