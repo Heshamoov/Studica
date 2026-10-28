@@ -230,7 +230,7 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
     <div class="board">
       <div class="lbl">Side · FlexDIO 0–7</div><div class="conns" id="pSide"></div>
       <div class="lbl" style="margin-top:16px">Bottom edge · wire letters match the row printed on the board: – top · + middle · S bottom</div>
-      <div class="lbl" style="color:#ffe08a">⚠️ Buttons on 12–21 work only with the VMX <b>HiCurrDIO jumper removed</b> (teacher).</div>
+      <div class="lbl" style="color:#ffe08a">Rule: buttons & switches → 0–11 · lights & servos → 12–21</div>
       <div class="edge" id="pEdge"></div>
     </div>
     <div class="titan"><div class="lbl">Titan · motors</div><div class="pins" id="pTitan"></div></div>
@@ -487,7 +487,7 @@ async function poll(){
 }
 
 // Detect problems; fix by itself where safe, otherwise one plain button.
-let bothSince = 0, titanAt = 0, titanBad = false, stopSince = 0, startFlips = [], lastStart = null, autoEn = 0;
+let setAt = 0, oldPins = false, titanAt = 0, titanBad = false, stopSince = 0, startFlips = [], lastStart = null, autoEn = 0;
 function checks(s){
   const P2 = [];   // [text, buttonLabel, action]
   const now = Date.now();
@@ -502,8 +502,9 @@ function checks(s){
   lastStart = !!s.start_btn; startFlips = startFlips.filter(t => now - t < 6000);
   if(startFlips.length > 6) P2.push(["START button acts by itself", "Fix", fixStart]);
   // START and RESET (pins 12-21) always read pressed -> HiCurrDIO jumper still fitted
-  if(s.start_btn && s.reset_btn){ bothSince = bothSince || now; if(now - bothSince > 5000) P2.push(["START / RESET buttons can't be read. Call your teacher (VMX jumper)."]); }
-  else bothSince = 0;
+  if(now - setAt > 20000){ setAt = now; P("/settings").then(r => { const v = {}; (r.settings || []).forEach(x => v[x.key] = +x.value);
+    oldPins = [v.START_BUTTON, v.STOP_BUTTON, v.RESET_BUTTON].some(p => p >= 12); }).catch(()=>{}); }
+  if(oldPins) P2.push(["Buttons are on pins 12–21, where they can't work. Move them to the new standard wiring.", "Show me", fixOldPins]);
   if(now - titanAt > 15000){ titanAt = now; P("/titan").then(t => { titanBad = !!t && (/No Hardware/i.test(t.hardware || "") || /0\.0\.0/.test(t.firmware || "")); }).catch(()=>{}); }
   if(titanBad) P2.push(["Wheels can't move: motor controller (Titan) not found. Check: E-STOP up · POWER on · Titan lights on · CAN cable (yellow/green) VMX → Titan.", "Wiring", () => go("wiring")]);
   if(s.servo_ok && !s.servo_ok[0]) P2.push(["Lift motor pin not working", "Fix", () => fixPin("lift")]);
@@ -516,6 +517,14 @@ function checks(s){
   html($("probs"));
   const ul = $("checks"); html(ul);
   if(!P2.length) ul.innerHTML = '<div class="st ok"><span class="dot"></span>All OK ✓</div>';
+}
+async function fixOldPins(){
+  if(await ask("New standard wiring", "START → 8 · STOP → 9 · RESET → 10\nLift → 12 · Pusher → 13 · Green → 14 · Red → 15\nApply it, then move the plugs.", "Apply")){
+    try{ for(const [k, v] of Object.entries(DEFAULTS)) await P("/set?key=" + k + "&value=" + v); oldPins = false; setAt = 0; }catch(e){}
+    try{ localStorage.removeItem(DONE_K); doneMap = {}; }catch(e){}
+    go("wiring");
+    if(await ask("Restart now?", "Needed for new wiring.", "Restart", "Later")){ mgrOK ? mgr("/restart", "Restarting…") : P("/restart").catch(()=>{}); }
+  }
 }
 async function fixStop(){
   if(await ask("STOP button", "Is a STOP button plugged into the robot?", "Yes", "No")){
@@ -571,8 +580,10 @@ const DEV = {
   lift:   ["Lift",  "LIFT_SERVO_PIN",     "out"],
   pusher: ["Pusher",      "SERVO_PIN",          "out"],
 };
-const DEFAULTS = {START_BUTTON:12, STOP_BUTTON:13, RESET_BUTTON:14, LIFT_TOP_SWITCH:6, LIFT_BOTTOM_SWITCH:7,
-  RUNNING_LED:10, STOPPED_LED:9, LIFT_SERVO_PIN:8, SERVO_PIN:11, START_ENABLED:1, STOP_ENABLED:1,
+// Inputs (buttons) on FlexDIO 8-10; outputs (servos, lights) on HiCurrDIO 12-15.
+// The HiCurrDIO bank is OUTPUT-only as delivered (jumper fitted), so buttons there always read 0.
+const DEFAULTS = {START_BUTTON:8, STOP_BUTTON:9, RESET_BUTTON:10, LIFT_TOP_SWITCH:6, LIFT_BOTTOM_SWITCH:7,
+  RUNNING_LED:14, STOPPED_LED:15, LIFT_SERVO_PIN:12, SERVO_PIN:13, START_ACTIVE_LOW:1, STOP_ACTIVE_LOW:1, RESET_ACTIVE_LOW:1, LED_ACTIVE_LOW:0, START_ENABLED:1, STOP_ENABLED:1,
   LIFT_HAS_TOP_SWITCH:1, LIFT_HAS_BOTTOM_SWITCH:1, FRONT_LEFT:0, FRONT_RIGHT:1, REAR_LEFT:2, REAR_RIGHT:3};
 const WHEEL = {fl:["Front L","FRONT_LEFT"], fr:["Front R","FRONT_RIGHT"], rl:["Rear L","REAR_LEFT"], rr:["Rear R","REAR_RIGHT"]};
 let cfg = {}, at = {}, atW = {}, old = {}, oldW = {};
@@ -651,7 +662,7 @@ function drawBoard(){
   const missing = Object.entries(DEV).filter(([k, d]) => at[k] == null && !d[3] && d[4] === undefined).map(([k, d]) => d[0]);
   if(missing.length) w.push("Not placed: " + missing.join(", "));
   const hi = Object.entries(at).filter(([k, p]) => p >= 12).map(([k]) => DEV[k][2]);
-  if(hi.includes("in") && hi.includes("out")) w.push("Pins 12–21: buttons OR lights/motors, not both");
+  if(hi.includes("in")) w.push("Buttons can't work on 12–21. Use 8, 9, 10 (or 0–7).");
   $("wWarn").innerHTML = w.map(x => '<div class="warn">⚠️ ' + x + '</div>').join("");
   return w.length === 0;
 }
@@ -992,7 +1003,7 @@ async function clearDone(){ if(await ask("Clear all ticks?", "", "Clear")){ done
 function vmxHTML(){
   const tag = (x, y, t, red) => '<span class="tag' + (red ? " red" : "") + '" style="left:' + x + '%;top:' + y + '%">' + t + "</span>";
   return '<div class="titan-card"><div class="panel" style="width:100%;flex:none;padding-left:0"><img src="' + PHOTO.edge + '" alt="VMX bottom edge" style="width:100%">' +
-    tag(14, 66, "8 9 10 11 → Lift · Red · Green · Pusher") + tag(34, 84, "12 13 14 → START · STOP · RESET") + "</div>" +
+    tag(14, 66, "8 9 10 → START · STOP · RESET") + tag(34, 84, "12 13 14 15 → Lift · Pusher · Green · Red") + "</div>" +
     '<ul class="tl" style="width:100%"><li>Each number = one column of 3 pins. Wire letters match the row: <b>–</b> top, <b>+</b> middle, <b>S</b> bottom.</li>' +
     "<li>Count the printed numbers; they zig-zag (8 up, 9 down, 10 up…).</li></ul></div>";
 }
@@ -1023,7 +1034,7 @@ function blockSVG(){
   // rows
   o += '<rect x="290" y="200" width="410" height="60" rx="10" fill="#f6f8fb" stroke="#dde3ea"/>';
   t(305, 224, "INPUT ← VMX cable  ·  OUTPUT → servo plug", 13, "#14171c", "start");
-  t(305, 246, "Row 1 = Lift (VMX 8)  ·  Row 2 = Pusher (VMX 11)", 13, "#14171c", "start");
+  t(305, 246, "Row 1 = Lift (VMX 12)  ·  Row 2 = Pusher (VMX 13)", 13, "#14171c", "start");
   o += "</svg>"; return o;
 }
 function powerSVG(){
@@ -1095,7 +1106,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 12:24";
+const PAGE_VER = "2026-10-28 13:09";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";

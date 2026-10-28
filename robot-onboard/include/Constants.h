@@ -158,14 +158,16 @@ namespace constant
     // ------------------------------------------------- control panel I/O
     // Confirmed by the Studica course project. NOTE the stop button reads
     // TRUE when NOT pressed (active low) - test the polarity yourself.
-    inline int START_BUTTON = 12;   // Wiring sheet 1
-    inline int STOP_BUTTON  = 13;   // Wiring sheet 1
+    // Buttons on FlexDIO 8-10: the HiCurrDIO bank (12-21) is OUTPUT-only as
+    // delivered (direction jumper fitted), so a button there always reads 0.
+    inline int START_BUTTON = 8;
+    inline int STOP_BUTTON  = 9;
     // RESET button (optional). -1 = not fitted. When pressed: stop everything,
     // clear the e-stop (red LED off), zero position/heading - ready for START.
-    inline int RESET_BUTTON = 14;   // Wiring sheet 1
+    inline int RESET_BUTTON = 10;
     inline bool RESET_ACTIVE_LOW = true;
-    inline int RUNNING_LED  = 10;   // Wiring sheet 1 (green)
-    inline int STOPPED_LED  = 9;    // Wiring sheet 1 (red)
+    inline int RUNNING_LED  = 14;   // green, HiCurrDIO output
+    inline int STOPPED_LED  = 15;   // red, HiCurrDIO output
     // LED rule (Hardware::UpdateLEDs): RED on only while the stop button is
     // pressed or after an emergency stop; GREEN on otherwise.
     // Tick LED_ACTIVE_LOW if an LED is wired from +5V to the pin (lights when
@@ -233,9 +235,9 @@ namespace constant
     // Servo pins are typed as the number PRINTED on the VMX (0-21).
     // The PWM channel is worked out from it (settings Recompute):
     // printed 0-11 (FlexDIO) -> PWM 10-21, printed 12-21 (HiCurrDIO) -> PWM 0-9.
-    inline int    SERVO_PIN       = 11;    // pusher servo, printed pin  <-- SET
-    inline int    LIFT_SERVO_PIN  = 8;     // lift servo, printed pin    <-- SET
-    inline int    SERVO_CHANNEL   = 21;     // pusher servo PWM header  <-- SET
+    inline int    SERVO_PIN       = 13;    // pusher servo, printed pin (HiCurrDIO -> PWM 1)
+    inline int    LIFT_SERVO_PIN  = 12;    // lift servo, printed pin (HiCurrDIO -> PWM 0)
+    inline int    SERVO_CHANNEL   = 1;      // derived from SERVO_PIN
     // Angles for the pendulum pusher (cad/make_pusher.py). Fit the horn so the
     // arm hangs STRAIGHT DOWN at servo 150 deg; then park (150 back) clears
     // the mast, the support beam and the storage base (checked in CAD).
@@ -259,7 +261,7 @@ namespace constant
     // The lift is a positional servo (no encoder). Height is set by angle,
     // mapped linearly between two calibrated points. Open loop: the code
     // waits LIFT_SERVO_SPEED to let it travel.
-    inline int    LIFT_SERVO_CHANNEL = 18;     // derived from LIFT_SERVO_PIN
+    inline int    LIFT_SERVO_CHANNEL = 0;      // derived from LIFT_SERVO_PIN
     inline double LIFT_ANGLE_AT_MIN  = 0.0;    // servo angle when fork is at LIFT_MIN
     inline double LIFT_ANGLE_AT_MAX  = 180.0;  // servo angle when fork is at LIFT_MAX
     inline double LIFT_SERVO_SPEED   = 60.0;   // mm/s, used only to wait for travel
