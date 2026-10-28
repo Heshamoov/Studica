@@ -989,25 +989,31 @@ function blockSVG(){
   o += "</svg>"; return o;
 }
 function powerSVG(){
-  let o = '<svg viewBox="0 0 900 340" font-family="Segoe UI,Arial" font-weight="700">';
+  let o = '<svg viewBox="0 -55 900 395" font-family="Segoe UI,Arial" font-weight="700">';
   const line = (d, c) => o += '<path d="' + d + '" stroke="' + c + '" stroke-width="7" fill="none" stroke-linejoin="round"/>';
   const cap = (x, y, t) => o += '<text x="' + x + '" y="' + y + '" font-size="14" text-anchor="middle" fill="#14171c">' + t + "</text>";
-  // row 1: battery -> power -> e-stop -> titan 12V IN  (red)
-  line("M150,70 H215", "#e00"); line("M305,70 H370", "#e00"); line("M470,70 H590", "#e00");
+  const tag = (x, y, t, c) => o += '<text x="' + x + '" y="' + y + '" font-size="14" text-anchor="middle" fill="' + (c || "#14171c") + '" stroke="#fff" stroke-width="5" paint-order="stroke">' + t + "</text>";
   o += pic("battery", 20, 20, 130, 100); cap(85, 140, "BATTERY");
   o += pic("power", 215, 20, 90, 100); cap(260, 140, "POWER");
   o += pic("estop", 370, 20, 100, 100); cap(420, 140, "E-STOP");
-  o += pic("titan", 590, 10, 290, 225, 84, 26, 24); cap(735, 252, "TITAN · 12V IN (ring)");
-  // black return, under the captions
-  line("M85,120 V160 H560 V88 H590", "#111");
-  // Titan outputs X0 -> VMX, X1 -> Servo block
-  o += '<circle cx="' + (590 + 290 * 0.58) + '" cy="' + (10 + 225 * 0.22) + '" r="24" fill="none" stroke="#ffcc00" stroke-width="4"/>';
+  o += pic("titan", 590, 10, 290, 225, 84, 26, 24); cap(700, 254, "TITAN");
+  // red (+): battery -> POWER -> E-STOP -> Titan 12V IN
+  line("M150,70 H215", "#e00"); line("M305,70 H370", "#e00");
+  line("M470,70 H555 V-12 H822 V44", "#e00");
+  // black (-): battery -> Titan 12V IN (no switch)
+  line("M85,120 V160 H540 V-26 H846 V44", "#111");
+  tag(850, 118, "12V IN");
+  // outputs X0 -> VMX, X1 -> Servo block
+  const xc = 590 + 290 * 0.58, yc = 10 + 225 * 0.22;
+  o += '<circle cx="' + xc + '" cy="' + yc + '" r="24" fill="none" stroke="#ffcc00" stroke-width="4"/>';
+  tag(xc, yc + 42, "X0 · X1");
   line("M640,240 V300 H470", "#e00"); line("M760,240 V300 H820", "#e00");
   o += '<text x="628" y="285" font-size="13" fill="#444" text-anchor="end">X0</text><text x="772" y="285" font-size="13" fill="#444">X1</text>';
   o += pic("pwrin", 350, 262, 120, 78); o += '<text x="410" y="258" font-size="13" fill="#444" text-anchor="middle" font-weight="800">VMX PWR IN</text>';
   o += pic("block", 820, 268, 75, 65); o += '<text x="857" y="262" font-size="12" fill="#444" text-anchor="middle" font-weight="800">Servo Block</text>';
-  o += '<text x="20" y="210" font-size="12" fill="#444">red = +  ·  black = –  ·  every cable has both</text>';
-  o += '<text x="20" y="230" font-size="12" fill="#444">E-STOP pressed = everything off (robot restarts, ~1 min)</text>';
+  o += '<text x="20" y="200" font-size="13" fill="#444">E-STOP → TITAN 12V IN (+)</text>';
+  o += '<text x="20" y="220" font-size="13" fill="#444">Battery black (–) → TITAN 12V IN (–)</text>';
+  o += '<text x="20" y="240" font-size="12" fill="#777">E-STOP pressed = everything off</text>';
   o += "</svg>"; return o;
 }
 async function applyStd(){
