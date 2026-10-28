@@ -110,6 +110,8 @@ select.big{font:inherit;font-weight:700;padding:9px 10px;border-radius:10px;bord
 .pad{display:grid;grid-template-columns:repeat(3,84px);gap:8px;justify-content:start}
 .pad button{height:70px;font-size:26px}.pad .mid{background:var(--err);color:#fff}
 .cl{list-style:none;padding:0;margin:0}.cl li{display:flex;align-items:center;gap:12px;padding:10px 6px;border-bottom:1px solid var(--line);font-weight:700;font-size:17px;cursor:pointer}
+.res{width:100%;border-collapse:collapse;margin-top:6px}.res td{padding:7px 6px;border-bottom:1px solid var(--line);font-weight:700}
+.res td.r{width:40px;text-align:center;font-size:18px}.res button{padding:6px 12px;font-size:14px;min-height:0}.res button.on.y{background:var(--ok);color:#fff}.res button.on.n{background:#d92d20;color:#fff}
 .cl li input{width:24px;height:24px;accent-color:var(--ok);margin:0}.cl li.ok{color:#0b5e2c}
 .timer{font-size:48px;font-weight:800;font-variant-numeric:tabular-nums;margin:6px 0}
 .gp{display:inline-flex;align-items:center;gap:10px;font-weight:700;padding:8px 14px;border-radius:10px;background:var(--errbg);color:#8f1d14}.gp.on{background:var(--okbg);color:#0b5e2c}
@@ -237,23 +239,28 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
   <div class="mh"><h2>1️⃣ Simple tasks · 20 marks</h2><button onclick="desc(1)">📄 Mission description</button></div>
   <div class="step"><span class="n">1</span><h3>Drive</h3></div>
   <div class="btns">
-    <button class="go" onclick="m1go('forward')">⬆ Forward</button><input type="number" id="m1_forward" value="500"> mm
-    <button class="go" onclick="m1go('backward')">⬇ Backward</button><input type="number" id="m1_backward" value="500"> mm
+    <button class="go" data-r="m1.forward" onclick="m1go('forward')">⬆ Forward</button><input type="number" id="m1_forward" value="500"> mm
+    <button class="go" data-r="m1.backward" onclick="m1go('backward')">⬇ Backward</button><input type="number" id="m1_backward" value="500"> mm
   </div>
-  <div class="btns"><button class="go" onclick="send('turn_by',$('m1_turn').value)">↺ Turn left</button><button class="go" onclick="send('turn_by',-$('m1_turn').value)">↻ Turn right</button><input type="number" id="m1_turn" value="90"> °</div>
+  <div class="btns"><button class="go" data-r="m1.left" onclick="send('turn_by',$('m1_turn').value)">↺ Turn left</button><button class="go" data-r="m1.right" onclick="send('turn_by',-$('m1_turn').value)">↻ Turn right</button><input type="number" id="m1_turn" value="90"> °</div>
   <div class="step"><span class="n">2</span><h3>Lift</h3></div>
-  <div class="btns"><button class="go" onclick="send('spin_lift',1)">⬆ Lift up</button><button class="go" onclick="send('spin_lift',-1)">⬇ Lift down</button></div>
+  <div class="btns"><button class="go" data-r="m1.up" onclick="send('spin_lift',1)">⬆ Lift up</button><button class="go" data-r="m1.down" onclick="send('spin_lift',-1)">⬇ Lift down</button></div>
   <div class="step"><span class="n">3</span><h3>Pusher</h3></div>
-  <div class="btns"><button class="go" onclick="send('push',0)">👉 Push</button><button class="go" onclick="send('retract',0)">👈 Retract</button></div>
+  <div class="btns"><button class="go" data-r="m1.push" onclick="send('push',0)">👉 Push</button><button class="go" data-r="m1.retract" onclick="send('retract',0)">👈 Retract</button></div>
   <div class="step"><span class="n">4</span><h3>Group of commands</h3></div>
   <div class="btns">
-    <button onclick="runSeq('forward:1000,turn_by:90')">A · Forward 1 m → Turn left 90°</button>
-    <button onclick="runSeq('forward:300,spin_lift:1,retract:0,backward:300')">B · Forward → Lift up → Retract → Backward</button>
+    <button data-r="m1.gA" onclick="runSeq('forward:1000,turn_by:90')">A · Forward 1 m → Turn left 90°</button>
+    <button data-r="m1.gB" onclick="runSeq('forward:300,spin_lift:1,retract:0,backward:300')">B · Forward → Lift up → Retract → Backward</button>
   </div>
   <div id="b1"></div>
   <div class="step"><span class="n">5</span><h3>Colour</h3></div>
-  <div class="btns"><button class="go" onclick="send('read_colour',0)">📷 Read colour</button><span class="colour" style="font-size:28px;font-weight:800" id="m1col">-</span></div>
+  <div class="btns"><button class="go" data-r="m1.colour" onclick="send('read_colour',0)">📷 Read colour</button><span class="colour" style="font-size:28px;font-weight:800" id="m1col">-</span></div>
   <div class="mstat"><span id="m1st"></span></div>
+  <div class="step"><span class="n">✔</span><h3>Results</h3></div>
+  <table class="res" id="resm1"></table>
+  <textarea id="resm1Txt" placeholder="What went wrong? (optional)"></textarea>
+  <div class="btns"><button class="go" onclick="resSend('m1')">📨 Send results to teacher</button><button onclick="resClear('m1')">Clear</button></div>
+  <div class="result" id="resm1Out"></div>
 </div></section>
 
 <!-- ================================================= MISSION 2 -->
@@ -276,12 +283,17 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
     <div>Speed <b id="spdv">40%</b><br><input type="range" id="spd" min="10" max="100" value="40" oninput="$('spdv').textContent=this.value+'%'" style="width:220px"></div>
   </div>
   <div class="step"><span class="n">3</span><h3>Lift · Pusher</h3></div>
-  <div class="btns"><button onclick="send('spin_lift',1)">⬆ Up</button><button onclick="send('spin_lift',-1)">⬇ Down</button><button onclick="send('push',0)">👉 Push</button><button onclick="send('retract',0)">👈 Retract</button></div>
+  <div class="btns"><button data-r="m2.lift" onclick="send('spin_lift',1)">⬆ Up</button><button data-r="m2.lift" onclick="send('spin_lift',-1)">⬇ Down</button><button data-r="m2.pusher" onclick="send('push',0)">👉 Push</button><button data-r="m2.pusher" onclick="send('retract',0)">👈 Retract</button></div>
   <div class="step"><span class="n">4</span><h3>Pick · Place</h3></div>
-  <div class="btns"><button class="go" onclick="send('pick',0)">🫳 Pick piece</button>
-    <button class="go" onclick="send('place_stand',$('m2stand').value)">📥 Place on stand</button>
+  <div class="btns"><button class="go" data-r="m2.pick" onclick="send('pick',0)">🫳 Pick piece</button>
+    <button class="go" data-r="m2.place" onclick="send('place_stand',$('m2stand').value)">📥 Place on stand</button>
     <select class="big" id="m2stand"><option value="1">1 · 25 mm · red</option><option value="2">2 · 50 mm · green</option><option value="3">3 · 75 mm · yellow</option><option value="4">4 · 100 mm · blue</option></select></div>
   <div class="mstat"><span id="m2st"></span></div>
+  <div class="step"><span class="n">✔</span><h3>Results</h3></div>
+  <table class="res" id="resm2"></table>
+  <textarea id="resm2Txt" placeholder="What went wrong? (optional)"></textarea>
+  <div class="btns"><button class="go" onclick="resSend('m2')">📨 Send results to teacher</button><button onclick="resClear('m2')">Clear</button></div>
+  <div class="result" id="resm2Out"></div>
 </div></section>
 
 <!-- ================================================= MISSION 3 -->
@@ -293,10 +305,15 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
   <div class="btns"><button onclick="b3.preset()">Standard routine</button><button onclick="b3.clear()">Clear</button></div>
   <div id="b3"></div>
   <div class="step"><span class="n">3</span><h3>Send to robot</h3></div>
-  <div class="btns"><button class="go huge" onclick="b3.load()">📤 Load to robot</button><span class="result" id="m3load" style="align-self:center"></span></div>
+  <div class="btns"><button class="go huge" data-r="m3.load" onclick="b3.load()">📤 Load to robot</button><span class="result" id="m3load" style="align-self:center"></span></div>
   <div class="step"><span class="n">4</span><h3>Run</h3></div>
-  <div class="btns"><button class="go huge" onclick="b3.run()">▶ Run</button><span style="align-self:center">or press the robot's <b>START</b> button</span></div>
+  <div class="btns"><button class="go huge" data-r="m3.run" onclick="b3.run()">▶ Run</button><span style="align-self:center">or press the robot's <b>START</b> button</span></div>
   <div class="mstat"><span id="m3st"></span></div>
+  <div class="step"><span class="n">✔</span><h3>Results</h3></div>
+  <table class="res" id="resm3"></table>
+  <textarea id="resm3Txt" placeholder="What went wrong? (optional)"></textarea>
+  <div class="btns"><button class="go" onclick="resSend('m3')">📨 Send results to teacher</button><button onclick="resClear('m3')">Clear</button></div>
+  <div class="result" id="resm3Out"></div>
 </div></section>
 
 <!-- ================================================= MISSION 4 -->
@@ -450,7 +467,7 @@ async function poll(){
   $("pill").className = "pill " + (ready ? "ok" : on ? "wait" : "");
   const DEV_PHASE = true;   // false = Test/Settings/Competition only after "Ready"
   document.querySelectorAll('nav a[data-v="test"],nav a[data-v="settings"],nav a[data-v="comp"]').forEach(a => a.classList.toggle("off", !ready && !DEV_PHASE));
-  if(s){ checks(s); lamps(s); $("colour").textContent = ({none:"-", hazard:"hazard"})[s.colour] ?? (s.colour || "-"); actResult(s.result); mstatus(s); }
+  if(s){ checks(s); lamps(s); $("colour").textContent = ({none:"-", hazard:"hazard"})[s.colour] ?? (s.colour || "-"); actResult(s.result); mstatus(s); resRobot(s); }
 }
 
 // Detect problems; fix by itself where safe, otherwise one plain button.
@@ -1106,10 +1123,11 @@ async function repSend(){
   const r = await repBuild(note); const q = repQueue(); q.push(r); repSave(q); $("repTxt").value = "";
   await repFlush(true);
 }
-async function repFlush(manual){
-  const q = repQueue(); if(!q.length) return;
+async function repFlush(manual, out){
+  const O = $(out || "repRes"); const q = repQueue(); if(!q.length) return;
   if(!ucfg.report_url){ try{ ucfg = (await L.check()).config || ucfg; }catch(e){} }
-  if(!ucfg.report_url){ $("repRes").textContent = (manual ? "Saved. " : "") + q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again, or use Copy report."; return; }
+  if(!ucfg.report_url){ try{ ucfg = await (await fetch("https://raw.githubusercontent.com/Heshamoov/Studica/dist/config.json", {cache: "no-store"})).json(); }catch(e){} }
+  if(!ucfg.report_url){ O.textContent = (manual ? "Saved. " : "") + q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again, or use Copy report."; return; }
   const left = []; let sent = 0, url = "";
   for(const r of q){
     try{
@@ -1118,7 +1136,7 @@ async function repFlush(manual){
     }catch(e){ left.push(r); }
   }
   repSave(left);
-  $("repRes").textContent = sent ? "✅ Sent to the teacher" + (left.length ? " · " + left.length + " still waiting" : "") : q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again.";
+  O.textContent = sent ? "✅ Sent to the teacher" + (left.length ? " · " + left.length + " still waiting" : "") : q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again.";
 }
 async function repCopy(){
   const r = await repBuild($("repTxt").value.trim() || "(no note)");
@@ -1205,7 +1223,7 @@ async function runSeq(seq){
        const q = await P("/run"); mnote(q.ok ? "Running group" : "⏳ Busy, wait"); }catch(e){ mnote("Robot not reachable"); }
 }
 let mlast = "";
-function mnote(t){ mlast = t; document.querySelectorAll(".mstat span:first-child").forEach(x => x.textContent = t); }
+function mnote(t){ mlast = t; if(/not reachable|Busy|❌|Add steps/.test(t)) resFail(t.replace(/^\W+/, "")); document.querySelectorAll(".mstat span:first-child").forEach(x => x.textContent = t); }
 function mstatus(s){
   const t = s.running ? "▶ Step " + (s.step + 1) + " / " + s.steps : s.busy ? "⏳ Working…" : (s.result ? (/FAIL|error|timed out/i.test(s.result) ? "❌ " + s.result.replace(/^.*?: ?/, "") : "✅ " + s.result.replace(/ finished.*$/, " done")) : "Ready");
   const colour = s.colour && s.colour !== "none" ? s.colour : "-";
@@ -1214,6 +1232,52 @@ function mstatus(s){
   const cur = s.running ? s.step : -1;
   document.querySelectorAll(".seq li").forEach((li, i) => li.classList.toggle("cur", i === cur));
 }
+
+// ---- mission results: robot status recorded automatically, student marks ✅ / ❌, sent to the teacher
+const RES = {
+  m1: [["forward","Forward"],["backward","Backward"],["left","Turn left"],["right","Turn right"],["up","Lift up"],["down","Lift down"],
+       ["push","Push"],["retract","Retract"],["gA","Group A"],["gB","Group B"],["gC","My group"],["colour","Read colour"]],
+  m2: [["drive","Drive (pad / keys / gamepad)"],["lift","Lift up / down"],["pusher","Push / retract"],["pick","Pick piece"],["place","Place on stand"]],
+  m3: [["load","Load to robot"],["run","Run routine"],["start","START button runs it"],["sort","Piece on the right stand"]],
+};
+const resGet = m => { try{ return JSON.parse(localStorage.getItem("studica.res." + m) || "{}") || {}; }catch(e){ return {}; } };
+const resPut = (m, r) => { try{ localStorage.setItem("studica.res." + m, JSON.stringify(r)); }catch(e){} };
+let resPend = null;
+function resDraw(m){
+  const r = resGet(m), ic = x => x === "ok" ? "✅" : x === "fail" ? "❌" : "·";
+  $("res" + m).innerHTML = '<tr><td></td><td class="r"><small>Robot</small></td><td><small>You</small></td></tr>' + RES[m].map(([k, t]) => { const e = r[k] || {};
+    return '<tr><td>' + t + (e.n ? ' <small style="color:#888">×' + e.n + '</small>' : '') + '</td><td class="r" title="' + (e.msg || "").replace(/"/g, "") + '">' + ic(e.robot) + '</td><td>' +
+      '<button class="y' + (e.you === "ok" ? " on" : "") + '" onclick="resMark(\'' + m + "','" + k + "','ok')\">✅ Worked</button> " +
+      '<button class="n' + (e.you === "bad" ? " on" : "") + '" onclick="resMark(\'' + m + "','" + k + "','bad')\">❌ Wrong</button></td></tr>"; }).join("");
+}
+function resMark(m, k, v){ const r = resGet(m); r[k] = r[k] || {}; r[k].you = r[k].you === v ? "" : v; resPut(m, r); resDraw(m); }
+function resClear(m){ resPut(m, {}); $("res" + m + "Txt").value = ""; $("res" + m + "Out").textContent = ""; resDraw(m); }
+function resTrack(m, k){ const r = resGet(m); r[k] = r[k] || {}; r[k].n = (r[k].n || 0) + 1; r[k].robot = ""; resPut(m, r); resPend = {m, k, t: Date.now(), busy: false}; resDraw(m); }
+function resRobot(s){
+  if(!resPend) return;
+  if(s.busy || s.running){ resPend.busy = true; return; }
+  const age = Date.now() - resPend.t;
+  if(!resPend.busy && age < 2500) return;
+  const {m, k} = resPend; resPend = null;
+  const r = resGet(m); if(!r[k]) return;
+  const bad = /FAIL|error|timed out|unknown/i.test(s.result || "");
+  r[k].robot = bad ? "fail" : "ok"; r[k].msg = s.result || ""; resPut(m, r); resDraw(m);
+}
+function resFail(msg){ if(!resPend) return; const {m, k} = resPend; resPend = null; const r = resGet(m); if(!r[k]) return; r[k].robot = "fail"; r[k].msg = msg; resPut(m, r); resDraw(m); }
+document.addEventListener("click", e => { const b = e.target.closest("[data-r]"); if(b){ const [m, k] = b.dataset.r.split("."); resTrack(m, k); } }, true);
+document.addEventListener("pointerdown", e => { if(e.target.closest("#v-m2 .pad")){ const r = resGet("m2"); r.drive = r.drive || {}; r.drive.n = (r.drive.n || 0) + 1; resPut("m2", r); } }, true);
+async function resSend(m){
+  const r = resGet(m), name = {m1:"Mission 1", m2:"Mission 2", m3:"Mission 3"}[m];
+  const rows = RES[m].map(([k, t]) => { const e = r[k] || {}; return "| " + t + " | " + (e.n || 0) + " | " + (e.robot === "ok" ? "✅" : e.robot === "fail" ? "❌" : "–") + " | " + (e.you === "ok" ? "✅" : e.you === "bad" ? "❌" : "–") + " | " + String(e.msg || "").replace(/\|/g, "/").slice(0, 80) + " |"; });
+  const bad = RES[m].filter(([k]) => (r[k] || {}).you === "bad" || (r[k] || {}).robot === "fail").length;
+  const ok = RES[m].filter(([k]) => (r[k] || {}).you === "ok").length;
+  const note = name + " results · " + ok + " ✅ · " + bad + " ❌\n\n| Test | Tries | Robot | Student | Robot message |\n|---|---|---|---|---|\n" + rows.join("\n") +
+    "\n\n**Student notes:** " + ($("res" + m + "Txt").value.trim() || "(none)");
+  $("res" + m + "Out").textContent = "Collecting the robot's log…";
+  const rep = await repBuild(note); rep.results = {mission: m, r}; const q = repQueue(); q.push(rep); repSave(q);
+  await repFlush(true, "res" + m + "Out");
+}
+["m1","m2","m3"].forEach(resDraw);
 
 // commands students may use: key -> [label, unit, default value, real cmd, fixed arg]
 const CMDS = {
@@ -1243,7 +1307,7 @@ function builder(elId, key, allowed){
     clear(){ steps = []; save(); api.render(); },
     preset(){ steps = [{c:"lift_home",a:0},{c:"forward",a:400},{c:"pick",a:0},{c:"backward",a:300},{c:"turn_by",a:180},{c:"forward",a:400},{c:"sort_piece",a:1},{c:"backward",a:200},{c:"lift_home",a:0}]; save(); api.render(); },
     async load(){ if(!steps.length){ mnote("Add steps first"); return false; }
-      try{ const r = await P("/load?seq=" + encodeURIComponent(seqText())); if($("m3load")) $("m3load").textContent = r.ok ? "✅ Loaded · START button is ready" : "❌ " + r.result; return r.ok; }
+      try{ const r = await P("/load?seq=" + encodeURIComponent(seqText())); if($("m3load")) $("m3load").textContent = r.ok ? "✅ Loaded · START button is ready" : "❌ " + r.result; if(!r.ok) resFail(r.result); return r.ok; }
       catch(e){ mnote("Robot not reachable"); return false; } },
     async run(){ if(await api.load()){ const q = await P("/run").catch(() => null); mnote(q && q.ok ? "Running" : "⏳ Busy, wait"); } },
   };
@@ -1252,7 +1316,7 @@ function builder(elId, key, allowed){
 const b1 = builder("b1", "studica.m1.group", ["forward","backward","turn_by","lift_up","lift_down","push","retract","wait"]);
 const b3 = builder("b3", "studica.m3.routine", ["forward","backward","strafe_left","strafe_right","turn_by","pick","sort_piece","place_stand","lift_home","push","retract","read_colour","wait"]);
 $("b1").insertAdjacentHTML("afterbegin", "<b>C · My group</b>");
-$("b1").insertAdjacentHTML("beforeend", '<div class="btns"><button class="go" onclick="b1.run()">▶ Run my group</button></div>');
+$("b1").insertAdjacentHTML("beforeend", '<div class="btns"><button class="go" data-r="m1.gC" onclick="b1.run()">▶ Run my group</button></div>');
 
 // ---- teleop: on-screen pad, keyboard, gamepad -> /drive (robot stops by itself 0.4 s after the last message)
 let tv = {vx:0, vy:0, w:0}, keys = {}, gpPrev = {}, gpSeen = false;
