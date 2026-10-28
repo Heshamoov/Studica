@@ -68,6 +68,31 @@
      "test"
     ]
    ]
+  },
+  {
+   "id": "t3-1028a",
+   "to": "team-3",
+   "date": "28 Oct",
+   "title": "3 wheels don't turn",
+   "text": "The Titan works (Rear L turned), so the problem is the other motors' power.",
+   "steps": [
+    "Battery charged",
+    "On the Titan: red/black motor plugs pushed fully into M0, M1, M3",
+    "Yellow 20A fuses for M0, M1, M3 in place",
+    "Rear L: plug its encoder cable (4 colours) into the Titan, same number as the motor",
+    "Do the new wiring (message above) for lights, lift and buttons",
+    "🧪 Test my robot again → 📨 Send results"
+   ],
+   "guides": [
+    [
+     "⚙️ Motors wiring",
+     "wiring#wMot"
+    ],
+    [
+     "🧪 Test",
+     "test"
+    ]
+   ]
   }
  ],
  "_help_messages": "Messages shown on the student page. to = all, or the end of the robot Wi-Fi name (Team-1). Change id to show a message again."
