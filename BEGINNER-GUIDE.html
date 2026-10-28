@@ -986,7 +986,7 @@ function drawStd(){
   $("wIO").innerHTML = wcard("vmx", vmxHTML()) + ["start","stop","reset","green","red"].map(k => wcard(k, guideSVG(k, d[DEV[k][1]]))).join("") +
     wcard("block", blockSVG()) + ["lift","pusher","top","bottom"].map(k => wcard(k, guideSVG(k, d[DEV[k][1]]))).join("");
   $("wMot").innerHTML = wcard("titan", titanHTML()) + Object.entries(WHEEL).map(([k, w]) => wcard(k, guideSVG(k, "M" + d[w[1]]))).join("");
-  $("wOther").innerHTML = [["can", "CAN: Titan ↔ VMX · green → L · yellow → H"], ["cam", "Camera → VMX USB (blue)"], ["enc", "Encoders → Titan, same number as the motor"]]
+  $("wOther").innerHTML = [["can", "CAN: Titan ↔ VMX · green → L · yellow → H"], ["cam", "Camera → VMX USB (blue)"], ["enc", "Encoder (4 thin wires) → Titan, ENC row next to the same M number as the motor · red + · blue A · black – · yellow B · NOT the NeoPixel / DotStar pins"]]
     .map(([k, t]) => wcard(k, '<div class="txt">' + t + '</div>')).join("");
   document.querySelectorAll("#v-wiring .gc input").forEach(cb => cb.onchange = () => {
     const c = cb.closest(".gc"); doneMap[c.dataset.k] = cb.checked; c.classList.toggle("ok", cb.checked);
@@ -1106,7 +1106,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 13:09";
+const PAGE_VER = "2026-10-28 13:28";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
