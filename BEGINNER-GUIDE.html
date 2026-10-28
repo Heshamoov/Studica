@@ -1095,7 +1095,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 12:23";
+const PAGE_VER = "2026-10-28 12:24";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
@@ -1151,8 +1151,8 @@ function whatsNew(){
   let seen = ""; try{ seen = localStorage.getItem("studica.seenVer") || ""; }catch(e){}
   if(seen === L.version) return;
   try{ localStorage.setItem("studica.seenVer", L.version); }catch(e){}
-  if(!seen) return;   // first time ever: nothing "new"
   const list = myMsgs();
+  if(!seen && !list.length) return;
   $("dT").textContent = "✅ Updated · " + L.version;
   $("dB").innerHTML = (L.notes ? "<p><b>New:</b> " + esc(L.notes) + "</p>" : "") + (list.length ? list.map(m => msgCard(m, false)).join("") : "<p>Nothing to do. Carry on 👍</p>");
   $("dmodal").classList.add("show");
