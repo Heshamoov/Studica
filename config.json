@@ -1,0 +1,105 @@
+{
+ "report_url": "https://studica-reports.hesham-alatrash.workers.dev/",
+ "_help": "Problem reports -> GitHub Issues. Deploy build/report-worker.js on Cloudflare Workers (free), then paste the worker URL here. Empty = students use 'Copy report'.",
+ "messages": [
+  {
+   "id": "all-1028-wiring3",
+   "to": "all",
+   "date": "28 Oct · 16:10",
+   "title": "Do these 3 things (all teams)",
+   "text": "Your robot still has the OLD program and the OLD wiring. That is why STOP looks pressed and nothing moves.",
+   "steps": [
+    "Connect to the robot Wi-Fi → the page asks \"Update the robot\" → click Update (2 min)",
+    "Then it asks \"Standard wiring\" → click Apply",
+    "Move the plugs on the VMX: START 8 · STOP 9 · RESET 10 · Lift 12 · Pusher 13 · Green 14 · Red 15",
+    "Keep the small VMX jumper near pins 12–21 ON (do not remove it)",
+    "🧪 Test → every row should be green → Simple tasks → 📨 Send results (press it ONCE)"
+   ],
+   "guides": [
+    [
+     "🔄 Update",
+     "update"
+    ],
+    [
+     "🔌 Wiring",
+     "wiring"
+    ],
+    [
+     "🧪 Test",
+     "test"
+    ]
+   ]
+  },
+  {
+   "id": "t1-1028d",
+   "to": "Team-1",
+   "date": "28 Oct · 16:10",
+   "title": "Good news: your buttons work now ✅",
+   "text": "2 things left:",
+   "steps": [
+    "Lift, pusher and lights don't work because the VMX jumper for pins 12–21 was removed. Ask the teacher to put it back, then switch the robot off and on.",
+    "Some settings were changed by hand (wheel size 100, wheel ports mixed up). That is why left / right drive the wrong way. 🧪 Test → Reset all settings → Restart.",
+    "🧪 Test my robot again. For each wheel, watch closely. Use 🔁 Again if it was too fast.",
+    "Simple tasks → mark ✅ / ❌ → 📨 Send results (once)"
+   ],
+   "guides": [
+    [
+     "🧪 Test",
+     "test"
+    ]
+   ]
+  },
+  {
+   "id": "t2-1028d",
+   "to": "Team-2",
+   "date": "28 Oct · 16:10",
+   "title": "Ignore the earlier \"Titan not found\" message",
+   "text": "That warning was wrong: the Titan always reports like that. Your wheels are blocked by the STOP button on the old pin.\nDo the steps above (Update robot → Apply → move the plugs).",
+   "guides": [
+    [
+     "🔄 Update",
+     "update"
+    ],
+    [
+     "🔌 Wiring",
+     "wiring"
+    ]
+   ]
+  },
+  {
+   "id": "t3-1028b",
+   "to": "team-3",
+   "date": "28 Oct · 15:10",
+   "title": "Your wheels are fine ✅ — STOP is blocking them",
+   "text": "All 4 wheels turned in the test. Forward / turn / lift fail only because STOP is still on the old pin 13.\nDo the 3 steps above. Also: Rear L and Rear R cables are swapped on the Titan — after \"Apply\", plug Rear L into M2 and Rear R into M3.",
+   "guides": [
+    [
+     "🧪 Test",
+     "test"
+    ],
+    [
+     "⚙️ Motors wiring",
+     "wiring#wMot"
+    ]
+   ]
+  },
+  {
+   "id": "t4-1028a",
+   "to": "team-4",
+   "date": "28 Oct",
+   "title": "Your wheel settings are mixed up",
+   "text": "Three wheels are set to the same Titan port (M0). \"Apply\" fixes it (M0 FL · M1 FR · M2 RL · M3 RR).",
+   "guides": [
+    [
+     "🔌 Wiring",
+     "wiring"
+    ],
+    [
+     "🧪 Test",
+     "test"
+    ]
+   ]
+  }
+ ],
+ "_help_messages": "Messages shown on the student page. to = all, or the end of the robot Wi-Fi name (Team-1). Change id to show a message again."
+}

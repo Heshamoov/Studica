@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot Control Panel</title>
+<!--
+  SC2026 Skill 23 - robot control panel.
+
+  Every button sends ONE command to the robot over plain HTTP:
+      http://<robot>:5800/do?cmd=forward&arg=500
+  and a routine is just a list of the same command/argument pairs. There is
+  one dispatch table, in the robot's Sequence.cpp, so a button and a saved
+  routine can never disagree about what a command means.
+
+  That is the point of the whole design: you build and re-order a routine by
+  clicking, load it, and run it - no recompile. A deploy cycle costs a couple
+  of minutes, and you have three hours.
+
+  OFFLINE MODE works with no robot at all, so the sequence can be built and
+  exported today. Export gives you a line you can paste straight into
+  LoadFallbackRoutine() in Robot.cpp, which means the routine survives even
+  if the network does not.
+
+  SELF-CONTAINED. No CDN - CID forbids internet on site.
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#14171c; --muted:#5b6472; --line:#dde1e8;
+  --accent:#1f6feb; --ok:#127a3e; --warn:#a15c00; --err:#c0281c;
+  --okbg:#e7f5ec; --warnbg:#fdf3e2; --errbg:#fdeceb; --chip:#eef1f6;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+    --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+    --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --panel:#161a20; --ink:#e6e9ef; --muted:#98a2b3; --line:#272d37;
+  --accent:#5b9dff; --ok:#4ec98a; --warn:#e3ab4f; --err:#ff7b6e;
+  --okbg:#12251b; --warnbg:#2a2013; --errbg:#2c1614; --chip:#1e242c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;
+  background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
+h1{font-size:15px;margin:0;font-weight:650}
+h1 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.grow{flex:1}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:8px;
+  padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+input{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:5px 8px;min-width:0}
+.estop{background:var(--err);border-color:var(--err);color:#fff;font-weight:700;
+  padding:9px 18px;font-size:15px}
+.conn{font-size:11px;padding:3px 9px;border-radius:20px;background:var(--chip);color:var(--muted)}
+.conn.on{background:var(--okbg);color:var(--ok)}
+.conn.err{background:var(--errbg);color:var(--err)}
+.conn.busy{background:var(--warnbg);color:var(--warn)}
+main{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;
+  padding:14px;align-items:start}
+@media(max-width:1000px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:13px 15px;margin-bottom:14px}
+.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  margin:0 0 10px;display:flex;gap:8px;align-items:center}
+.grp{margin-bottom:14px}
+.grp h3{font-size:11px;color:var(--muted);margin:0 0 7px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.05em}
+.acts{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:7px}
+.act{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:8px;
+  overflow:hidden;background:var(--bg)}
+.act .go{flex:1;border:none;border-radius:0;text-align:left;padding:8px 10px;
+  background:transparent;font-weight:600;font-size:13px}
+.act .go:hover{background:var(--chip)}
+.act input{width:62px;border:none;border-left:1px solid var(--line);border-radius:0;
+  text-align:right;font-family:var(--mono);font-size:12px;background:transparent}
+.act .unit{display:flex;align-items:center;padding:0 6px;font-size:10px;
+  color:var(--muted);border-left:1px solid var(--line);min-width:26px}
+.act .add{border:none;border-left:1px solid var(--line);border-radius:0;
+  padding:0 10px;font-size:16px;background:transparent;color:var(--accent);font-weight:700}
+.act .add:hover{background:var(--chip)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+td.n{font-family:var(--mono);color:var(--muted);width:24px}
+tr.cur{background:var(--okbg)}
+tr.cur td{font-weight:650}
+td input{width:70px;font-family:var(--mono);font-size:12px;padding:2px 5px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+.tile b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);font-weight:600}
+.tile span{font-family:var(--mono);font-size:16px}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  padding:10px;overflow-x:auto;font-family:var(--mono);font-size:11.5px;max-height:190px}
+code{font-family:var(--mono);background:var(--chip);padding:1px 5px;border-radius:4px}
+.log{max-height:150px;overflow-y:auto;font-size:12px;font-family:var(--mono)}
+.log div{padding:2px 0;border-bottom:1px solid var(--line)}
+.log .bad{color:var(--err)}
+.log .good{color:var(--ok)}
+.empty{color:var(--muted);padding:14px;text-align:center}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.pad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,50px);gap:6px;justify-content:center}
+.pad button{font-size:18px;font-weight:700;padding:0;user-select:none;touch-action:none}
+.pad button.held{background:var(--accent);border-color:var(--accent);color:#fff}
+.pad .blank{visibility:hidden}
+.padwrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:center}
+.speed{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:150px}
+.banner{border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;display:none}
+.banner.show{display:block}
+.banner.warn{background:var(--warnbg);color:var(--warn)}
+.banner.err{background:var(--errbg);color:var(--err)}
+.tile span.good{color:var(--ok)} .tile span.bad{color:var(--err)}
+</style>
+
+<style id="hubnav-css">#hubnav{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:5px 12px;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--chip,#eef1f6);border-bottom:1px solid var(--line,#dde1e8)}#hubnav a{color:var(--muted,#5b6472);text-decoration:none;padding:2px 9px;border-radius:6px}#hubnav a:hover{background:var(--panel,#fff);color:var(--ink,#14171c)}#hubnav a.here{background:var(--accent,#1f6feb);color:#fff}#hubnav b{margin-right:6px;color:var(--ink,#14171c);font-weight:650}</style>
+<script id="hubnav-head">
+/* ONE robot address for every page. Typed on any page, it is saved here and
+   every other page opens with it (added to the address bar as ?host=&port=). */
+(function(){try{
+  var q=new URLSearchParams(location.search), K="studica.robot";
+  var r=JSON.parse(localStorage.getItem(K)||"null");
+  if(q.get("host")){ localStorage.setItem(K,JSON.stringify({host:q.get("host"),port:q.get("port")||"5800"})); }
+  else if(r&&r.host){ q.set("host",r.host); q.set("port",r.port||"5800");
+    location.replace(location.pathname+"?"+q.toString()+location.hash); }
+}catch(e){}})();
+</script>
+<style id="sidenav-css">body{padding-left:210px}#sidenav{position:fixed;left:0;top:0;bottom:0;width:210px;background:#fff;border-right:1px solid #dde3ea;padding:0 10px 12px;display:flex;flex-direction:column;gap:6px;z-index:40;font:18px/1.4 "Segoe UI",system-ui,Arial,sans-serif}#sidenav .sn-title{background:#123a7a;color:#fff;margin:0 -10px 10px;height:56px;display:flex;align-items:center;padding:0 18px;font-size:21px;font-weight:700}#sidenav a{padding:14px;border-radius:12px;color:#14171c;text-decoration:none;font-weight:700}#sidenav a:hover{background:#f1f4f8}#sidenav a.here{background:#1f6feb;color:#fff}</style>
+</head>
+<body>
+<nav id="sidenav"><div class="sn-title">🤖 Robot</div><a href="../START HERE.html#connect">🔗 Connect</a><a href="../START HERE.html#test">🧪 Test</a><a href="../START HERE.html#settings">⚙️ Settings</a><a href="../START HERE.html#m2" class="here">🏁 Competition</a></nav>
+
+
+
+<header>
+  <h1>Control Panel <small>SC2026 &middot; Skill 23</small></h1>
+  <span class="grow"></span>
+  <input id="host" value="10.12.34.2" style="width:120px">
+  <input id="port" value="5800" style="width:62px">
+  <button id="connBtn">Connect</button>
+  <span class="conn" id="conn">Offline</span>
+  <button id="enBtn" title="Enable / disable robot outputs">Enable</button>
+  <button class="estop" id="estop">STOP</button>
+</header>
+
+<main>
+  <section>
+    <div class="banner warn" id="disBanner">The robot is <b>DISABLED</b>: motors and servos will not move. Click <b>Enable</b> at the top.</div>
+    <div class="banner err" id="cmdBanner"></div>
+    <div class="panel">
+      <h2>Drive by hand <span class="conn">hold a button, or keys W A S D (move) Q E (turn); release = stop</span></h2>
+      <div class="padwrap">
+        <div class="pad" id="pad">
+          <button data-k="q" title="Turn left (Q)">&#x21B6;</button>
+          <button data-k="w" title="Forward (W)">&#x25B2;</button>
+          <button data-k="e" title="Turn right (E)">&#x21B7;</button>
+          <button data-k="a" title="Strafe left (A)">&#x25C0;</button>
+          <button id="padStop" title="Stop">&#x25A0;</button>
+          <button data-k="d" title="Strafe right (D)">&#x25B6;</button>
+          <span class="blank"></span>
+          <button data-k="s" title="Backward (S)">&#x25BC;</button>
+          <span class="blank"></span>
+        </div>
+        <div class="speed">
+          <label>Speed <b id="spdTxt">30%</b></label>
+          <input type="range" id="spd" min="10" max="100" step="5" value="30">
+          <label>Lift <span style="font-size:11px">(R up / F down, 10 mm)</span></label>
+          <div class="row"><button id="liftUp">Lift +10</button><button id="liftDn">Lift -10</button></div>
+          <div class="row"><button id="pushBtn">Push</button><button id="retractBtn">Park pusher</button></div>
+        </div>
+      </div>
+      <p class="note">Wheels on blocks the first time. The robot stops by itself if the page stops sending (Wi-Fi drop, tab closed) within 0.4 s.</p>
+    </div>
+    <div class="panel">
+      <h2>Actions <span class="conn" id="hint">click to run &middot; + to add to the routine</span></h2>
+      <div id="groups"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="panel">
+      <h2>Routine <span class="conn" id="seqCount">0 steps</span></h2>
+      <div class="row" style="margin-bottom:9px">
+        <button class="primary" id="loadBtn">Load to robot</button>
+        <button id="runBtn">Run</button>
+        <button id="clearSeq">Clear</button>
+        <button id="saveBtn">Save</button>
+        <button id="openBtn">Open</button>
+        <input type="file" id="seqFile" accept=".txt,.json" hidden>
+      </div>
+      <table id="seqTbl"></table>
+      <p class="note">The routine is a plain list of the same commands the
+      buttons send. <b>Load</b> sends it to the robot; <b>Run</b> executes it.
+      The physical start button runs whatever was last loaded.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Telemetry</h2>
+      <div class="tiles">
+        <div class="tile"><b>x</b><span id="tx">—</span></div>
+        <div class="tile"><b>y</b><span id="ty">—</span></div>
+        <div class="tile"><b>heading</b><span id="tth">—</span></div>
+        <div class="tile"><b>lift</b><span id="tlift">—</span></div>
+        <div class="tile"><b>step</b><span id="tstep">—</span></div>
+        <div class="tile"><b>enabled</b><span id="ten">—</span></div>
+        <div class="tile"><b>colour</b><span id="tcol">—</span></div>
+        <div class="tile"><b>start btn</b><span id="tsb">—</span></div>
+        <div class="tile"><b>stop btn</b><span id="tst">—</span></div>
+      </div>
+      <div class="tiles" style="margin-top:7px;grid-template-columns:1fr">
+        <div class="tile"><b>last result</b><span id="tres" style="font-size:13px">—</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Export <span class="conn">paste into Robot.cpp</span></h2>
+      <button id="copyBtn" style="margin-bottom:8px">Copy</button>
+      <pre id="export"></pre>
+      <p class="note">Drop this into <code>LoadFallbackRoutine()</code> so the
+      routine survives even if the network does not. A competition is not the
+      place to discover the panel is unreachable.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+/* Mirrors Sequence::KnownCommands() in the robot. If you add a command
+   there, add it here - the robot rejects anything it does not know, so a
+   mismatch fails loudly at Load rather than quietly mid-run. */
+const GROUPS = [
+  {name:"Drive", acts:[
+    {cmd:"forward",      label:"Forward",      arg:300, unit:"mm"},
+    {cmd:"backward",     label:"Backward",     arg:300, unit:"mm"},
+    {cmd:"strafe_left",  label:"Strafe left",  arg:200, unit:"mm"},
+    {cmd:"strafe_right", label:"Strafe right", arg:200, unit:"mm"},
+    {cmd:"turn_by",      label:"Turn by",      arg:90,  unit:"°"},
+    {cmd:"turn_to",      label:"Turn to",      arg:0,   unit:"°"},
+    {cmd:"stop",         label:"Stop",         arg:0,   unit:""},
+  ]},
+  {name:"Lift", acts:[
+    {cmd:"lift_to",       label:"Lift to",      arg:60,  unit:"mm"},
+    {cmd:"lift_by",       label:"Lift by",      arg:10,  unit:"mm"},
+    {cmd:"lift_home",     label:"Lift home",    arg:0,   unit:""},
+    {cmd:"lift_carry",    label:"Lift carry",   arg:0,   unit:""},
+    {cmd:"lift_stand",    label:"Lift to stand",arg:1,   unit:"1-4"},
+  ]},
+  {name:"Pusher", acts:[
+    {cmd:"push",    label:"PUSH (slow sweep, then park)", arg:0, unit:""},
+    {cmd:"retract", label:"PARK pusher",  arg:0, unit:""},
+  ]},
+  {name:"Pick and place", acts:[
+    {cmd:"pick",        label:"PICK from storage", arg:0, unit:""},
+    {cmd:"place_stand", label:"PLACE on stand",    arg:1, unit:"1-4"},
+    {cmd:"sort_piece",  label:"SORT piece (auto stand)", arg:1, unit:"fallback 1-4"},
+  ]},
+  {name:"Housekeeping", acts:[
+    {cmd:"wait",             label:"Wait",          arg:1,  unit:"s"},
+    {cmd:"set_position_zero",label:"Zero position", arg:0,  unit:""},
+    {cmd:"zero_lift",        label:"Set lift height", arg:40, unit:"mm"},
+    {cmd:"led_running",      label:"LED running",   arg:1,  unit:""},
+    {cmd:"led_stopped",      label:"LED stopped",   arg:1,  unit:""},
+  ]},
+  {name:"Camera / colour", acts:[
+    {cmd:"read_colour", label:"Read colour",  arg:0, unit:""},
+  ]},
+  {name:"Sensors", acts:[
+    {cmd:"drive_to_us",   label:"Drive to ultrasonic", arg:80,  unit:"mm"},
+    {cmd:"drive_to_ir",   label:"Drive to IR",         arg:50,  unit:"mm"},
+    {cmd:"drive_to_line", label:"Forward to line",     arg:500, unit:"max mm"},
+    {cmd:"follow_line",   label:"Follow line",         arg:300, unit:"mm"},
+  ]},
+  {name:"Bring-up tests", acts:[
+    {cmd:"spin_wheel", label:"Spin one wheel", arg:0, unit:"0-3 FL FR RL RR"},
+    {cmd:"spin_lift",  label:"Nudge lift",     arg:1, unit:"+1 up / -1 down"},
+  ]},
+];
+
+const KEY = "studica.controlpanel.v1";
+const $ = id => document.getElementById(id);
+
+let seq = [];
+let connected = false, poll = null, busy = false, enabled = true, lastResult = null;
+
+/* ------------------------------------------------------------- storage */
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({seq,
+  host:$("host").value, port:$("port").value})); }catch(e){} }
+function load(){ try{ const r = localStorage.getItem(KEY);
+  if(r){ const s = JSON.parse(r);
+    if(Array.isArray(s.seq)) seq = s.seq;
+    if(s.host) $("host").value = s.host;
+    if(s.port) $("port").value = s.port; } }catch(e){} }
+
+/* --------------------------------------------------------------- comms */
+const base = () => "http://" + $("host").value.trim() + ":" + $("port").value.trim();
+
+async function call(route){
+  if(!connected){ logLine("offline - " + route, "bad"); return null; }
+  try{
+    const r = await fetch(base() + route, {cache:"no-store", signal: AbortSignal.timeout(2500)});
+    return await r.json();
+  }catch(e){
+    setConn("err", "Lost");
+    connected = false;
+    if(poll){ clearInterval(poll); poll = null; }
+    logLine("connection lost", "bad");
+    return null;
+  }
+}
+
+async function connect(){
+  setConn("", "Connecting…");
+  try{
+    const r = await fetch(base() + "/state", {cache:"no-store", signal: AbortSignal.timeout(3000)});
+    const s = await r.json();
+    connected = true;
+    checkCommands();
+    checkRestart();
+    setConn("on", "Connected");
+    logLine("connected to " + base(), "good");
+    applyState(s);
+    if(poll) clearInterval(poll);
+    poll = setInterval(refresh, 300);
+  }catch(e){
+    connected = false;
+    setConn("err", "No robot");
+    logLine("could not reach " + base() + " - laptop on the robot's Wi-Fi? robot program running (./run.sh)? try a private window if a proxy blocks it", "bad");
+  }
+}
+
+async function refresh(){
+  const s = await call("/state");
+  if(s) applyState(s);
+}
+
+function applyState(s){
+  $("tx").textContent   = s.x.toFixed(0) + " mm";
+  $("ty").textContent   = s.y.toFixed(0) + " mm";
+  $("tth").textContent  = s.theta.toFixed(0) + "°";
+  $("tlift").textContent= s.lift.toFixed(0) + " mm";
+  $("tstep").textContent= s.running ? (s.step + 1) + "/" + s.steps : "idle";
+  busy = !!s.busy;
+  setConn(busy ? "busy" : "on", busy ? "Busy" : "Connected");
+  if("enabled" in s){
+    enabled = !!s.enabled;
+    $("ten").textContent = enabled ? "yes" : "NO";
+    $("ten").className = enabled ? "good" : "bad";
+    $("enBtn").textContent = enabled ? "Disable" : "Enable";
+    $("enBtn").className = enabled ? "" : "primary";
+    $("disBanner").classList.toggle("show", !enabled);
+  }
+  if("colour" in s) $("tcol").textContent = s.colour;
+  $("tsb").textContent = s.start_btn ? "1" : "0";
+  $("tst").textContent = s.estop ? "E-STOP" : (s.stop_btn ? "1 (ok)" : "0 (STOP)");
+  $("tst").className = (s.estop || !s.stop_btn) ? "bad" : "good";
+  $("tres").textContent = s.result;
+  $("tres").className = /FAIL|abort/i.test(s.result) ? "bad" : (s.result === "ok" ? "good" : "");
+  if(s.result !== lastResult){
+    if(lastResult !== null) logLine("robot: " + s.result, /FAIL|abort/i.test(s.result) ? "bad" : "good");
+    lastResult = s.result;
+  }
+  if(s.running) renderSeq(s.step);
+}
+
+function setConn(cls, txt){
+  const c = $("conn"); c.className = "conn " + cls; c.textContent = txt;
+}
+
+function logLine(text, cls){
+  const d = document.createElement("div");
+  if(cls) d.className = cls;
+  const t = new Date().toLocaleTimeString();
+  d.textContent = t + "  " + text;
+  $("log").prepend(d);
+  while($("log").children.length > 60) $("log").lastChild.remove();
+}
+
+/* -------------------------------------------------------------- actions */
+async function runNow(cmd, arg){
+  logLine("> " + cmd + (arg ? " " + arg : ""));
+  const r = await call("/do?cmd=" + encodeURIComponent(cmd) + "&arg=" + arg);
+  if(r && !r.ok) logLine("  " + r.result, "bad");
+}
+
+function addStep(cmd, arg){
+  seq.push({cmd, arg});
+  save(); renderSeq();
+}
+
+/* --------------------------------------------------------------- render */
+function buildGroups(){
+  const host = $("groups"); host.innerHTML = "";
+  GROUPS.forEach(g => {
+    const wrap = document.createElement("div"); wrap.className = "grp";
+    const h = document.createElement("h3"); h.textContent = g.name;
+    const acts = document.createElement("div"); acts.className = "acts";
+    g.acts.forEach(a => {
+      const el = document.createElement("div"); el.className = "act"; el.dataset.cmd = a.cmd;
+
+      const go = document.createElement("button");
+      go.className = "go"; go.textContent = a.label;
+      go.title = "Run " + a.cmd + " now";
+
+      const inp = document.createElement("input");
+      inp.type = "number"; inp.value = a.arg; inp.step = "any";
+      if(!a.unit) { inp.style.display = "none"; }
+
+      const unit = document.createElement("span");
+      unit.className = "unit"; unit.textContent = a.unit;
+      if(!a.unit) unit.style.display = "none";
+
+      const add = document.createElement("button");
+      add.className = "add"; add.textContent = "+";
+      add.title = "Add to the routine";
+
+      go.onclick  = () => runNow(a.cmd, +inp.value || 0);
+      add.onclick = () => addStep(a.cmd, +inp.value || 0);
+
+      el.append(go, inp, unit, add);
+      acts.append(el);
+    });
+    wrap.append(h, acts); host.append(wrap);
+  });
+}
+
+function renderSeq(activeStep){
+  const t = $("seqTbl");
+  $("seqCount").textContent = seq.length + (seq.length === 1 ? " step" : " steps");
+  t.innerHTML = "<tr><th></th><th>Command</th><th>Value</th><th></th></tr>";
+  if(!seq.length){
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="4" class="empty">Press <b>+</b> on an action to add it.</td>';
+    t.append(tr);
+    renderExport();
+    return;
+  }
+  seq.forEach((s, i) => {
+    const tr = document.createElement("tr");
+    if(activeStep === i) tr.className = "cur";
+    tr.innerHTML = '<td class="n">' + (i + 1) + '</td><td>' + s.cmd + '</td>';
+
+    const tdA = document.createElement("td");
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.step = "any"; inp.value = s.arg;
+    inp.oninput = () => { s.arg = +inp.value || 0; save(); renderExport(); };
+    tdA.append(inp); tr.append(tdA);
+
+    const tdX = document.createElement("td");
+    const up = document.createElement("button"); up.textContent = "↑";
+    up.onclick = () => { if(i>0){ [seq[i-1],seq[i]]=[seq[i],seq[i-1]]; save(); renderSeq(); } };
+    const dn = document.createElement("button"); dn.textContent = "↓";
+    dn.onclick = () => { if(i<seq.length-1){ [seq[i+1],seq[i]]=[seq[i],seq[i+1]]; save(); renderSeq(); } };
+    const del = document.createElement("button"); del.textContent = "✕";
+    del.style.color = "var(--err)";
+    del.onclick = () => { seq.splice(i,1); save(); renderSeq(); };
+    tdX.append(up, dn, del); tr.append(tdX);
+    t.append(tr);
+  });
+  renderExport();
+}
+
+const seqText = () => seq.map(s => s.cmd + ":" + s.arg).join(",");
+
+function renderExport(){
+  if(!seq.length){ $("export").textContent = "// add some steps first"; return; }
+  const lines = seq.map((s,i) =>
+    '    "' + s.cmd + ":" + s.arg + (i < seq.length-1 ? ',"' : '");'));
+  $("export").textContent =
+    "// paste into LoadFallbackRoutine() in Robot.cpp\n" +
+    "sequence->Parse(\n" + lines.join("\n");
+}
+
+/* ------------------------------------------------ robot command sync */
+async function checkCommands(){
+  try{
+    const r = await fetch(base() + "/commands", {cache:"no-store", signal: AbortSignal.timeout(2500)});
+    const d = await r.json();
+    const robot = new Set(d.commands || []);
+    const page = GROUPS.flatMap(g => g.acts.map(a => a.cmd));
+    const missing = page.filter(c => !robot.has(c));
+    const b = $("cmdBanner");
+    if(missing.length){
+      b.innerHTML = "The robot program on the robot is <b>older than this page</b>: it does not know " +
+        missing.join(", ") + ". Copy robot-onboard to the robot again and rebuild (make -B -j4).";
+      b.classList.add("show");
+    } else b.classList.remove("show");
+    document.querySelectorAll(".act").forEach(el => {
+      el.style.opacity = missing.includes(el.dataset.cmd) ? ".4" : "";
+    });
+  }catch(e){}
+}
+
+async function checkRestart(){
+  try{
+    const r = await fetch(base() + "/settings", {cache:"no-store", signal: AbortSignal.timeout(2500)});
+    const d = await r.json();
+    const b = $("cmdBanner");
+    if(d.restart_pending){
+      b.innerHTML = "<b>Wiring was changed but the robot program has not restarted yet</b> - it is still using the OLD ports, so buttons may move the wrong motors. " +
+        '<button id="cpRestart" class="primary">Restart robot program</button>';
+      b.classList.add("show");
+      $("cpRestart").onclick = async () => { try{ await fetch(base() + "/restart", {cache:"no-store"}); }catch(e){}
+        b.innerHTML = "Restarting... press Connect again in a few seconds."; };
+    }
+  }catch(e){}
+}
+
+/* ---------------------------------------------------- hand driving */
+const held = new Set();
+let driveTimer = null;
+const KEYMAP = {w:[1,0,0], s:[-1,0,0], a:[0,1,0], d:[0,-1,0], q:[0,0,1], e:[0,0,-1]};
+function driveVector(){
+  let vx = 0, vy = 0, w = 0;
+  held.forEach(k => { const v = KEYMAP[k]; vx += v[0]; vy += v[1]; w += v[2]; });
+  const f = +$("spd").value / 100;
+  return [vx * f, vy * f, w * f];
+}
+async function sendDrive(){
+  const [vx, vy, w] = driveVector();
+  if(!connected) return;
+  try{ await fetch(base() + "/drive?vx=" + vx.toFixed(2) + "&vy=" + vy.toFixed(2) + "&w=" + w.toFixed(2),
+                   {cache:"no-store", signal: AbortSignal.timeout(400)}); }catch(e){}
+}
+function updateDrive(){
+  document.querySelectorAll("#pad button[data-k]").forEach(b => b.classList.toggle("held", held.has(b.dataset.k)));
+  if(held.size && !driveTimer){
+    if(!connected) logLine("offline - connect first", "bad");
+    sendDrive(); driveTimer = setInterval(sendDrive, 120);
+  }
+  if(!held.size && driveTimer){ clearInterval(driveTimer); driveTimer = null; sendDrive(); }
+}
+function releaseAll(){ held.clear(); updateDrive(); }
+document.querySelectorAll("#pad button[data-k]").forEach(b => {
+  const k = b.dataset.k;
+  b.addEventListener("pointerdown", e => { e.preventDefault(); b.setPointerCapture(e.pointerId); held.add(k); updateDrive(); });
+  ["pointerup","pointercancel","lostpointercapture"].forEach(ev => b.addEventListener(ev, () => { held.delete(k); updateDrive(); }));
+});
+$("padStop").onclick = releaseAll;
+window.addEventListener("blur", releaseAll);
+document.addEventListener("visibilitychange", () => { if(document.hidden) releaseAll(); });
+const typing = e => /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && e.target.type !== "range";
+document.addEventListener("keydown", e => {
+  if(typing(e) || e.repeat) return;
+  const k = e.key.toLowerCase();
+  if(KEYMAP[k]){ held.add(k); updateDrive(); e.preventDefault(); }
+  if(k === "r") runNow("lift_by", 10);
+  if(k === "f") runNow("lift_by", -10);
+});
+document.addEventListener("keyup", e => { const k = e.key.toLowerCase(); if(KEYMAP[k]){ held.delete(k); updateDrive(); } });
+$("spd").oninput = () => { $("spdTxt").textContent = $("spd").value + "%"; };
+$("liftUp").onclick = () => runNow("lift_by", 10);
+$("liftDn").onclick = () => runNow("lift_by", -10);
+$("pushBtn").onclick = () => runNow("push", 0);
+$("retractBtn").onclick = () => runNow("retract", 0);
+$("enBtn").onclick = async () => {
+  const r = await call("/enable?on=" + (enabled ? 0 : 1));
+  if(r) logLine(r.result, "good");
+};
+
+/* --------------------------------------------------------------- wiring */
+$("connBtn").onclick = connect;
+$("estop").onclick = async () => {
+  releaseAll();
+  logLine("ABORT", "bad");
+  if(connected) { try{ await fetch(base() + "/abort", {cache:"no-store"}); }catch(e){} }
+};
+$("loadBtn").onclick = async () => {
+  if(!seq.length){ logLine("nothing to load", "bad"); return; }
+  const r = await call("/load?seq=" + encodeURIComponent(seqText()));
+  if(r) logLine(r.ok ? "loaded " + seq.length + " steps" : "load failed: " + r.result,
+                r.ok ? "good" : "bad");
+};
+$("runBtn").onclick = async () => {
+  const r = await call("/run");
+  if(r) logLine(r.ok ? "running" : "run failed: " + r.result, r.ok ? "good" : "bad");
+};
+$("clearSeq").onclick = () => {
+  if(seq.length && confirm("Clear the routine?")){ seq = []; save(); renderSeq(); }
+};
+$("copyBtn").onclick = () => {
+  const text = $("export").textContent;
+  const done = () => { $("copyBtn").textContent = "Copied"; setTimeout(() => $("copyBtn").textContent = "Copy", 1200); };
+  const legacy = () => {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.append(ta); ta.select();
+    let ok = false; try{ ok = document.execCommand("copy"); }catch(e){}
+    ta.remove(); ok ? done() : alert("Clipboard blocked - select the text and copy it by hand.");
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, legacy);
+  else legacy();
+};
+$("saveBtn").onclick = () => {
+  const blob = new Blob([seqText()], {type:"text/plain"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "routine.txt"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+$("openBtn").onclick = () => $("seqFile").click();
+$("seqFile").onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    const parts = String(r.result).split(",").map(s => s.trim()).filter(Boolean);
+    const known = new Set(GROUPS.flatMap(g => g.acts.map(a => a.cmd)).concat(["clamp_open","clamp_hold"]));
+    const out = [];
+    for(const p of parts){
+      const [c, v] = p.split(":");
+      if(!known.has(c)){ alert("Unknown command in file: " + c); return; }
+      out.push({cmd:c, arg:+v || 0});
+    }
+    seq = out; save(); renderSeq();
+    logLine("opened " + seq.length + " steps", "good");
+  };
+  r.readAsText(f); e.target.value = "";
+};
+["host","port"].forEach(id => $(id).oninput = save);
+
+document.addEventListener("keydown", e => {
+  // Escape is the fastest abort you can reach with one hand on the robot.
+  if(e.key === "Escape") $("estop").click();
+});
+
+load();
+(function(){
+  // the Workbench passes the robot address in the link; it wins over saved data
+  var p = new URLSearchParams(location.search);
+  if(p.get("host")) $("host").value = p.get("host");
+  if(p.get("port")) $("port").value = p.get("port");
+})();
+buildGroups();
+renderSeq();
+logLine("offline - press Connect when the robot program is running");
+</script>
+<script id="hubnav-js">
+/* Keep the shared robot address up to date and carry it on every menu link. */
+(function(){
+  var K="studica.robot", H=["host","rHost"], P=["port","rPort"];
+  function el(ids){ for(var i=0;i<ids.length;i++){ var e=document.getElementById(ids[i]); if(e) return e; } return null; }
+  function cur(){
+    var h=el(H), p=el(P), r=null;
+    try{ r=JSON.parse(localStorage.getItem(K)||"null"); }catch(e){}
+    return { host:(h&&h.value.trim())||(r&&r.host)||"", port:(p&&p.value.trim())||(r&&r.port)||"5800" };
+  }
+  function store(){ var c=cur(); if(c.host){ try{ localStorage.setItem(K,JSON.stringify(c)); }catch(e){} } }
+  [el(H),el(P)].forEach(function(e){ if(e){ e.addEventListener("input",store); e.addEventListener("change",store); } });
+  store();
+  document.querySelectorAll('#hubnav a').forEach(function(a){
+    a.addEventListener("click",function(){ var c=cur(); if(!c.host) return;
+      var base=a.getAttribute("href").split("?")[0];
+      a.href=base+"?host="+encodeURIComponent(c.host)+"&port="+encodeURIComponent(c.port); });
+  });
+})();
+</script>
+</body>
+</html>
