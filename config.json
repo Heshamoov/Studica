@@ -3,15 +3,16 @@
  "_help": "Problem reports -> GitHub Issues. Deploy build/report-worker.js on Cloudflare Workers (free), then paste the worker URL here. Empty = students use 'Copy report'.",
  "messages": [
   {
-   "id": "all-1028-wiring2",
+   "id": "all-1028-wiring3",
    "to": "all",
-   "date": "28 Oct · 15:10",
+   "date": "28 Oct · 16:10",
    "title": "Do these 3 things (all teams)",
    "text": "Your robot still has the OLD program and the OLD wiring. That is why STOP looks pressed and nothing moves.",
    "steps": [
     "Connect to the robot Wi-Fi → the page asks \"Update the robot\" → click Update (2 min)",
     "Then it asks \"Standard wiring\" → click Apply",
     "Move the plugs on the VMX: START 8 · STOP 9 · RESET 10 · Lift 12 · Pusher 13 · Green 14 · Red 15",
+    "Keep the small VMX jumper near pins 12–21 ON (do not remove it)",
     "🧪 Test → every row should be green → Simple tasks → 📨 Send results (press it ONCE)"
    ],
    "guides": [
@@ -30,33 +31,34 @@
    ]
   },
   {
-   "id": "t1-1028c",
+   "id": "t1-1028d",
    "to": "Team-1",
-   "date": "28 Oct · 15:10",
-   "title": "Robot drives by itself in Teleop",
-   "text": "Your START and RESET buttons \"press themselves\" every 2–3 seconds, and START runs a full routine. That is the driving you saw.\nThe 3 steps above fix it. Until then: don't use Teleop.",
+   "date": "28 Oct · 16:10",
+   "title": "Good news: your buttons work now ✅",
+   "text": "2 things left:",
+   "steps": [
+    "Lift, pusher and lights don't work because the VMX jumper for pins 12–21 was removed. Ask the teacher to put it back, then switch the robot off and on.",
+    "Some settings were changed by hand (wheel size 100, wheel ports mixed up). That is why left / right drive the wrong way. 🧪 Test → Reset all settings → Restart.",
+    "🧪 Test my robot again. For each wheel, watch closely. Use 🔁 Again if it was too fast.",
+    "Simple tasks → mark ✅ / ❌ → 📨 Send results (once)"
+   ],
    "guides": [
     [
-     "🔄 Update",
-     "update"
+     "🧪 Test",
+     "test"
     ]
    ]
   },
   {
-   "id": "t2-1028c",
+   "id": "t2-1028d",
    "to": "Team-2",
-   "date": "28 Oct",
-   "title": "Wheels: the robot can't find the Titan",
-   "text": "No wheel can move until this is fixed.",
-   "steps": [
-    "E-STOP up, POWER on",
-    "Titan lights on (3.3V / 5V next to 12V IN)",
-    "CAN cable: yellow → H, green → L, at the Titan AND at the VMX"
-   ],
+   "date": "28 Oct · 16:10",
+   "title": "Ignore the earlier \"Titan not found\" message",
+   "text": "That warning was wrong: the Titan always reports like that. Your wheels are blocked by the STOP button on the old pin.\nDo the steps above (Update robot → Apply → move the plugs).",
    "guides": [
     [
-     "⚡ Power wiring",
-     "wiring#wPower"
+     "🔄 Update",
+     "update"
     ],
     [
      "🔌 Wiring",

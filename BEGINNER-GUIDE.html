@@ -494,7 +494,7 @@ async function poll(){
 }
 
 // Detect problems; fix by itself where safe, otherwise one plain button.
-let setAt = 0, oldPins = false, titanAt = 0, titanBad = false, stopSince = 0, startFlips = [], lastStart = null, autoEn = 0;
+let setAt = 0, lastSet = {}, oldPins = false, titanAt = 0, titanBad = false, stopSince = 0, startFlips = [], lastStart = null, autoEn = 0;
 function checks(s){
   const P2 = [];   // [text, buttonLabel, action]
   const now = Date.now();
@@ -509,14 +509,16 @@ function checks(s){
   lastStart = !!s.start_btn; startFlips = startFlips.filter(t => now - t < 6000);
   if(startFlips.length > 6) P2.push(["START button acts by itself", "Fix", fixStart]);
   // START and RESET (pins 12-21) always read pressed -> HiCurrDIO jumper still fitted
-  if(now - setAt > 20000){ setAt = now; P("/settings").then(r => { const v = {}; (r.settings || []).forEach(x => v[x.key] = +x.value);
+  if(now - setAt > 20000){ setAt = now; P("/settings").then(r => { const v = {}; (r.settings || []).forEach(x => v[x.key] = +x.value); lastSet = v;
     oldPins = [v.START_BUTTON, v.STOP_BUTTON, v.RESET_BUTTON].some(p => p >= 12); }).catch(()=>{}); }
   if(oldPins) P2.push(["Buttons are on pins 12–21, where they can't work. Move them to the new standard wiring.", "Show me", fixOldPins]);
   if(oldPins && !auto.pinAsk && updRobotNeed !== true && !$("modal").classList.contains("show")){ auto.pinAsk = true; fixOldPins(); }
-  if(now - titanAt > 15000){ titanAt = now; P("/titan").then(t => { titanBad = !!t && (/No Hardware/i.test(t.hardware || "") || /0\.0\.0/.test(t.firmware || "")); }).catch(()=>{}); }
-  if(titanBad) P2.push(["Wheels can't move: motor controller (Titan) not found. Check: E-STOP up · POWER on · Titan lights on · CAN cable (yellow/green) VMX → Titan.", "Wiring", () => go("wiring")]);
-  if(s.servo_ok && !s.servo_ok[0]) P2.push(["Lift motor pin not working", "Fix", () => fixPin("lift")]);
-  if(s.servo_ok && !s.servo_ok[1]) P2.push(["Pusher pin not working", "Fix", () => fixPin("pusher")]);
+  if(s.servo_ok && ((!s.servo_ok[0] && lastSet.LIFT_SERVO_PIN >= 12) || (!s.servo_ok[1] && lastSet.SERVO_PIN >= 12)))
+    P2.push(["Lift / pusher / lights can't work: the VMX jumper for pins 12–21 is missing. Call your teacher to put it back, then switch the robot off and on."]);
+  else {
+    if(s.servo_ok && !s.servo_ok[0]) P2.push(["Lift motor pin not working", "Fix", () => fixPin("lift")]);
+    if(s.servo_ok && !s.servo_ok[1]) P2.push(["Pusher pin not working", "Fix", () => fixPin("pusher")]);
+  }
   if(s.colour === "no camera") P2.push(["Camera not found. Plug it into a USB port.", "Restart", () => mgr("/restart", "Restarting…")]);
   const html = el => { el.innerHTML = ""; P2.forEach(([t, bl, f]) => {
     const d = document.createElement("div"); d.className = "prob"; d.textContent = "⚠️ " + t;
@@ -1028,7 +1030,9 @@ const REC = {stop:["STOP_BUTTON","VMX "], start:["START_BUTTON","VMX "], reset:[
   lift:["LIFT_SERVO_PIN","VMX ", " → Servo Block 1"], pusher:["SERVO_PIN","VMX ", " → Servo Block 2"], cam:[null, "VMX USB"]};
 async function recLoad(){
   let v = null;
-  try{ const d = await P("/settings"); v = {}; d.settings.forEach(x => v[x.key] = Math.round(x.value)); }catch(e){}
+  let raw = null, defs = {};
+  try{ const d = await P("/settings"); v = {}; raw = {}; d.settings.forEach(x => { v[x.key] = Math.round(x.value); raw[x.key] = +x.value; if("default" in x) defs[x.key] = +x.default; }); }catch(e){}
+  const changed = raw ? ["WHEEL_RADIUS", "KP_LINEAR", "KP_ANGULAR", "MAX_SPEED", "LIFT_UP_MM_S", "LIFT_DOWN_MM_S", "HALF_LENGTH", "HALF_WIDTH"].filter(k => k in defs && Math.abs(raw[k] - defs[k]) > 1e-6) : [];
   let bad = 0;
   for(const [id, [key, pre, post]] of Object.entries(REC)){
     const el = $("rec-" + id); if(!el) continue;
@@ -1037,7 +1041,14 @@ async function recLoad(){
     if(v && now !== want){ bad++; el.className = "rec bad"; el.innerHTML = "Use " + pre + want + enc + " · robot is on <s>" + pre + now + "</s>"; }
     else { el.className = "rec"; el.textContent = pre + want + enc + (post || ""); }
   }
-  $("recFix").innerHTML = bad ? '<div class="prob">⚠️ ' + bad + ' part' + (bad > 1 ? "s are" : " is") + ' set differently from the standard wiring (red).<button class="go" onclick="recApply()">Use standard wiring</button></div>' : "";
+  $("recFix").innerHTML = (changed.length ? '<div class="prob">⚠️ Settings were changed by hand (' + changed.join(", ") + ').<button class="go" onclick="resetAll()">Reset all settings</button></div>' : "") +
+    (bad ? '<div class="prob">⚠️ ' + bad + ' part' + (bad > 1 ? "s are" : " is") + ' set differently from the standard wiring (red).<button class="go" onclick="recApply()">Use standard wiring</button></div>' : "");
+}
+async function resetAll(){
+  if(!await ask("Reset all settings?", "Everything goes back to the standard: wiring, wheel size, speeds. Then move the plugs to match the Wiring tab and run the test again.", "Reset")) return;
+  try{ await P("/reset?key=all"); }catch(e){}
+  if(await ask("Restart now?", "Needed for the reset.", "Restart", "Later")){ mgrOK ? mgr("/restart", "Restarting…") : P("/restart").catch(()=>{}); go("connect"); }
+  else setTimeout(recLoad, 800);
 }
 async function recApply(){ await fixOldPins(); setTimeout(recLoad, 1500); }
 
@@ -1174,7 +1185,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 15:07";
+const PAGE_VER = "2026-10-28 16:05";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
