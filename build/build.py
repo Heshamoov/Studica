@@ -33,7 +33,8 @@ def sh(*cmd):
 def main():
     now = datetime.datetime.now(datetime.timezone.utc)
     sha = sh("git", "rev-parse", "--short", "HEAD") or "local"
-    version = os.environ.get("VERSION") or now.strftime("%Y-%m-%d.%H%M") + "-" + sha
+    stamped = open(os.path.join(ROOT, "robot-onboard", "VERSION")).read().strip() if os.path.exists(os.path.join(ROOT, "robot-onboard", "VERSION")) else ""
+    version = os.environ.get("VERSION") or (stamped if stamped and stamped != "dev" else now.strftime("%Y-%m-%d.%H%M") + "-" + sha)
     date = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     notes = os.environ.get("NOTES") or sh("git", "log", "-1", "--pretty=%s") or ""
 
