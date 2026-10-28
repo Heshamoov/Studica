@@ -115,6 +115,7 @@ select.big{font:inherit;font-weight:700;padding:9px 10px;border-radius:10px;bord
 .cl{list-style:none;padding:0;margin:0}.cl li{display:flex;align-items:center;gap:12px;padding:10px 6px;border-bottom:1px solid var(--line);font-weight:700;font-size:17px;cursor:pointer}
 .res{width:100%;border-collapse:collapse;margin-top:6px}.res td{padding:7px 6px;border-bottom:1px solid var(--line);font-weight:700}
 .res td.r{width:40px;text-align:center;font-size:18px}.res button{padding:6px 12px;font-size:14px;min-height:0}.res button.on.y{background:var(--ok);color:#fff}.res button.on.n{background:#d92d20;color:#fff}
+#trows .rt{padding:4px 12px;min-height:0;font-size:16px;margin-left:auto}
 .cl li input{width:24px;height:24px;accent-color:var(--ok);margin:0}.cl li.ok{color:#0b5e2c}
 .timer{font-size:48px;font-weight:800;font-variant-numeric:tabular-nums;margin:6px 0}
 .gp{display:inline-flex;align-items:center;gap:10px;font-weight:700;padding:8px 14px;border-radius:10px;background:var(--errbg);color:#8f1d14}.gp.on{background:var(--okbg);color:#0b5e2c}
@@ -880,6 +881,7 @@ function row(id, icon, note, cls){
 }
 function drawRows(){
   $("trows").innerHTML = TESTS.map(([id, name]) => '<li id="t-' + id + '"><span class="ic">⚪</span><span>' + name + '</span><span class="nt"></span>' +
+    '<button class="rt" title="Test again" onclick="runOne(\'' + id + '\')">↻</button>' +
     (GUIDE[id] ? '<a href="#" style="display:none" onclick="go(\'settings\');setTimeout(()=>showGuide(\'' + GUIDE[id] + '\'),1200);return false">how to plug</a>' : "") + "</li>").join("");
 }
 async function state(){ return await P("/state"); }
@@ -891,15 +893,36 @@ async function runTests(){
   drawRows(); needRestart = false; $("bTest").disabled = true;
   try{ const d = await P("/settings"); tcfg = {}; d.settings.forEach(x => tcfg[x.key] = x.value); }
   catch(e){ row("prog", "❌", "Connect first"); $("bTest").disabled = false; return; }
-  let pass = 0;
+  let pass = 0, stopped = false;
   for(const [id, , fn] of TESTS){
+    if(stopped){ row(id, "⚪", "Stopped"); continue; }
     row(id, "⏳", "", "run");
-    let r; try{ r = await fn(); }catch(e){ r = ["❌", "No answer from robot"]; }
+    let r; try{ r = await fn(); }catch(e){ if(e === ABORT){ stopped = true; P("/abort").catch(()=>{}); row(id, "⚪", "Stopped"); continue; } r = ["❌", "No answer from robot"]; }
     row(id, r[0], r[1]); if(r[0] !== "❌") pass++;
     if(id === "prog" && r[0] === "❌") break;
   }
   $("bTest").disabled = false;
   if(needRestart && await ask("Restart now?", "Needed for the fixes.", "Restart", "Later")){ mgrOK ? mgr("/restart", "Restarting…") : P("/restart").catch(()=>{}); go("connect"); }
+}
+// test one row again (↻ next to each row)
+async function runOne(id){
+  const t = TESTS.find(x => x[0] === id); if(!t || $("bTest").disabled) return;
+  $("bTest").disabled = true; needRestart = false;
+  try{ const d = await P("/settings"); tcfg = {}; d.settings.forEach(x => tcfg[x.key] = x.value); }catch(e){ row(id, "❌", "Connect first"); $("bTest").disabled = false; return; }
+  row(id, "⏳", "", "run");
+  let r; try{ r = await t[2](); }catch(e){ r = e === ABORT ? ["⚪", "Stopped"] : ["❌", "No answer from robot"]; if(e === ABORT) P("/abort").catch(()=>{}); }
+  row(id, r[0], r[1]); $("bTest").disabled = false;
+  if(needRestart && await ask("Restart now?", "Needed for the fixes.", "Restart", "Later")){ mgrOK ? mgr("/restart", "Restarting…") : P("/restart").catch(()=>{}); go("connect"); }
+}
+// question after a movement: adds "🔁 Again" (repeat the move) and "■ Stop test"
+const ABORT = {abort: true};
+async function askMove(title, text, opts, again){
+  for(;;){
+    const i = await choose(title, text, opts.concat(["🔁 Again", "■ Stop test"]));
+    if(i === opts.length){ await again(); continue; }
+    if(i === opts.length + 1 || i < 0) throw ABORT;
+    return i;
+  }
 }
 async function tProg(){ const s = await state(); return s ? ["✅"] : ["❌", "Connect first"]; }
 async function tEnable(){
@@ -948,11 +971,11 @@ async function tRed(){
 }
 let onBlocks = false;
 async function tWheel(n){
-  if(!onBlocks && !(onBlocks = (await choose("Wheels", "Put the robot on blocks. Wheels must not touch anything.", ["Done", "Skip wheels"])) === 0)) return ["⚪", "Skipped"];
-  const before = (await state()).enc[n];
-  const after = (await doCmd("spin_wheel", n)).enc[n];
-  const d = after - before;
-  const i = await choose(WN[n] + " wheel", "What happened?", ["Turned forward", "Turned backward", "Another wheel turned", "Nothing moved"]);
+  if(!onBlocks && !(onBlocks = (await choose("Wheels", "Put the robot on blocks. Wheels must not touch anything.", ["Done", "Skip wheels", "■ Stop test"]).then(i => { if(i === 2) throw ABORT; return i; })) === 0)) return ["⚪", "Skipped"];
+  let d = 0;
+  const spin = async () => { const before = (await state()).enc[n]; const after = (await doCmd("spin_wheel", n)).enc[n]; d = after - before; };
+  await spin();
+  const i = await askMove(WN[n] + " wheel", "What happened? Watch closely: it spins for 1 second.", ["Turned forward", "Turned backward", "Another wheel turned", "Nothing moved"], spin);
   if(i === 0){
     if(Math.abs(d) < 3) return ["⚠️", "Encoder cable not plugged in"];
     if(d < 0){ await setv("ENC_INVERT_" + WK[n], tcfg["ENC_INVERT_" + WK[n]] ? 0 : 1); return ["✅", "fixed"]; }
@@ -970,7 +993,7 @@ async function tWheel(n){
 }
 async function tLift(){
   await doCmd("spin_lift", 1);
-  const i = await choose("Lift", "What happened?", ["Went up", "Went down", "Nothing"]);
+  const i = await askMove("Lift", "What happened?", ["Went up", "Went down", "Nothing"], () => doCmd("spin_lift", 1));
   let r = ["✅"];
   if(i === 1){
     if(tcfg.LIFT_CONTINUOUS){ const u = tcfg.LIFT_UP_CMD, dn = tcfg.LIFT_DOWN_CMD; await setv("LIFT_UP_CMD", dn); await setv("LIFT_DOWN_CMD", u); }
@@ -983,7 +1006,7 @@ async function tLift(){
 }
 async function tPusher(){
   await doCmd("push", 0);
-  const i = await choose("Pusher", "Did the pusher move?", ["Yes", "No"]);
+  const i = await askMove("Pusher", "Did the pusher move?", ["Yes", "No"], async () => { await doCmd("retract", 0); await doCmd("push", 0); });
   return i === 0 ? ["✅"] : ["❌", "Check wiring"];
 }
 async function tCam(){
@@ -1125,7 +1148,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 13:46";
+const PAGE_VER = "2026-10-28 14:34";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
