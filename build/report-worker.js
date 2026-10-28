@@ -20,6 +20,7 @@ export default {
       "", "### Settings", "```json", cut(JSON.stringify(r.settings), 6000), "```",
       "", "### Robot log (last lines)", "```", cut(r.log, 12000), "```",
       "", "### Compile log (last lines)", "```", cut(r.buildLog, 6000), "```",
+      "", "### Diagnostics", "```json", cut(JSON.stringify(r.diag, null, 1), 12000), "```",
     ].join("\n");
     const gh = await fetch(`https://api.github.com/repos/${env.REPO}/issues`, {
       method: "POST",

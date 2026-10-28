@@ -406,7 +406,7 @@ document.querySelectorAll('nav a[href="#"]').forEach(a => a.onclick = e => { e.p
 function st(id, kind, text){ $(id).className = "st " + (kind || ""); $(id + "m").innerHTML = text; }
 
 // ---------------------------------------------------------------- polling
-let ready = false, mgrOK = false, ever = false, clicked = false, auto = {}, waitSince = 0;
+let halBusy = false, ready = false, mgrOK = false, ever = false, clicked = false, auto = {}, waitSince = 0;
 const CALL = "Call your teacher.";
 function iConnected(){ clicked = true; auto = {}; st("s1", "", "Checking…"); poll(); }
 
@@ -430,7 +430,14 @@ async function poll(){
         if(once("build", () => M("/build?full=1&start=1").catch(()=>{}))) st("s2", "", "Preparing…"); else st("s2", "err", CALL);
       }
       else if(!m.running){ st("s2", "", "Starting…"); once("start", () => M("/start").catch(()=>{})); }
-      else if(!s){ waitSince = waitSince || Date.now(); const late = Date.now() - waitSince > 90000; st("s2", late ? "err" : "", late ? CALL : "Starting…"); }
+      else if(!s){
+        waitSince = waitSince || Date.now(); const t = Date.now() - waitSince;
+        // program is running but not answering: look for the "another program owns the VMX" error and fix it once
+        if(t > 25000 && !auto.halcheck){ auto.halcheck = true;
+          M("/log?name=run&lines=20").then(l => { if(/VMX-pi HAL/.test(l)){ halBusy = true; if(!auto.halfix){ auto.halfix = true; waitSince = Date.now(); M("/restart").catch(()=>{}); } } }).catch(()=>{}); }
+        const late = t > 90000;
+        st("s2", late ? "err" : "", late ? (halBusy ? "Another program is using the robot. Update the robot (🔄 Update), then switch it off and on." : CALL) : (halBusy ? "Freeing the robot from another program…" : "Starting…"));
+      }
       else { waitSince = 0; ready = true; st("s2", "ok", "Ready ✓"); }
     }
   }
@@ -1082,8 +1089,9 @@ async function repBuild(note){
   try{ manager = await M("/status"); }catch(e){}
   try{ log = await M("/log?name=run&lines=120"); }catch(e){}
   try{ buildLog = await M("/log?name=build&lines=40"); }catch(e){}
+  let diag = null; try{ diag = await M("/diag"); }catch(e){}
   if(!team){ team = prompt("Your team name (as on the robot's Wi-Fi):", "Team1") || "unknown"; try{ localStorage.setItem("studica.team", team); }catch(e){} }
-  return {team, time: new Date().toISOString(), robot: host, version: L ? L.version : "file", robotVersion: robotVer, note, state, settings, manager, log, buildLog};
+  return {team, time: new Date().toISOString(), robot: host, version: L ? L.version : "file", robotVersion: robotVer, note, state, settings, manager, log, buildLog, diag};
 }
 function repText(r){ return "[" + r.team + "] " + r.time + " · dashboard " + r.version + " · robot " + r.robotVersion + "\n\n" + r.note + "\n\nSTATE: " + JSON.stringify(r.state) + "\n\nSETTINGS: " + JSON.stringify(r.settings) + "\n\nLOG:\n" + r.log + "\n\nBUILD:\n" + r.buildLog; }
 async function repSend(){

@@ -23,6 +23,7 @@ Only the Python standard library is used - nothing to install.
 
 import json
 import os
+import sys
 import shutil
 import signal
 import subprocess
@@ -49,6 +50,8 @@ state = {
     "message": "",
     "started_at": 0.0,
     "upload_files": 0,
+    "restart_self": False,
+    "freed": [],
 }
 
 
@@ -67,6 +70,67 @@ def robot_running():
     return subprocess.call(["pgrep", "-x", "robot"], stdout=subprocess.DEVNULL) == 0
 
 
+# ------------------------------------------------------- other VMX programs
+COMPETITORS = ("robotCommand", "frcUserProgram", "FRCUserProgram", "frcRunRobot", "netconsole-host")
+
+
+def hal_users():
+    """Processes (not ours) that hold the VMX hardware: they load the VMX HAL
+    library, or look like an FRC program deployed from VS Code."""
+    me, found = os.getpid(), []
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit() or int(pid) == me:
+            continue
+        try:
+            with open("/proc/%s/cmdline" % pid, "rb") as f:
+                cmd = f.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+            if not cmd:
+                continue
+            comm = open("/proc/%s/comm" % pid).read().strip()
+            if comm == "robot" or "robot_manager" in cmd or "run.sh" in cmd:
+                continue            # ours
+            hit = any(c in cmd for c in COMPETITORS)
+            if not hit:
+                with open("/proc/%s/maps" % pid) as f:
+                    hit = "vmxpi_hal" in f.read()
+            if hit:
+                unit = ""
+                try:
+                    for line in open("/proc/%s/cgroup" % pid):
+                        for part in line.strip().split("/"):
+                            if part.endswith(".service") and part != "robot-manager.service":
+                                unit = part
+                except OSError:
+                    pass
+                found.append({"pid": int(pid), "cmd": cmd[:200], "unit": unit})
+        except (OSError, ValueError):
+            pass
+    return found
+
+
+def free_vmx():
+    """Stop anything else that owns the VMX, and its autostart."""
+    users = hal_users()
+    for u in users:
+        if u["unit"] and not u["unit"].startswith(("user@", "session-", "ssh", "rc-local", "cron", "systemd-")):
+            subprocess.call(["systemctl", "stop", u["unit"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.call(["systemctl", "disable", u["unit"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            os.kill(u["pid"], signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        log_line("freed the VMX from pid %d (%s) %s" % (u["pid"], u["unit"] or "no unit", u["cmd"]))
+    if users:
+        time.sleep(1.5)
+        for u in hal_users():
+            try:
+                os.kill(u["pid"], signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        state["freed"] = (state["freed"] + users)[-10:]
+    return users
+
+
 # ------------------------------------------------------------- start / stop
 def start_program():
     with lock:
@@ -75,6 +139,7 @@ def start_program():
         if not has_binary():
             return False, "the program is not compiled yet - press Build"
         stop_program(quiet=True)
+        free_vmx()
         os.makedirs(LOGS, exist_ok=True)
         run = os.path.join(ROOT, "run.sh")
         os.chmod(run, 0o755)
@@ -140,6 +205,10 @@ def _build_thread(full, then_start):
         state["build_secs"] = time.time() - state["build_started"]
         state["message"] = "compiled OK" if rc == 0 else "compile FAILED - see the build log"
     log_line("build %s (%.0f s)" % ("ok" if rc == 0 else "FAILED", state["build_secs"]))
+    if state.get("restart_self"):
+        log_line("manager updated - restarting the manager")
+        stop_program(quiet=True)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     if rc == 0 and then_start:
         start_program()
 
@@ -175,6 +244,8 @@ def upload_commit():
     if not os.path.isdir(STAGE) or state["upload_files"] == 0:
         return False, "nothing was sent"
     n = 0
+    me = os.path.abspath(__file__)
+    old = open(me, "rb").read()
     for dirpath, _, files in os.walk(STAGE):
         for name in files:
             src = os.path.join(dirpath, name)
@@ -185,6 +256,7 @@ def upload_commit():
             os.utime(dst, None)          # "now", so make sees it as changed
             n += 1
     shutil.rmtree(STAGE, ignore_errors=True)
+    state["restart_self"] = open(me, "rb").read() != old
     log_line("new code received: %d files" % n)
     ok, msg = build(full=False, then_start=True)
     return ok, "%d files copied, %s" % (n, msg)
@@ -198,6 +270,30 @@ def set_clock(epoch_ms):
     rc = subprocess.call(["date", "-s", "@%d" % int(want)], stdout=subprocess.DEVNULL)
     log_line("clock set from laptop (rc %d)" % rc)
     return rc == 0, "clock set" if rc == 0 else "could not set the clock"
+
+
+def sh(cmd):
+    try:
+        return subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, timeout=8).decode("utf-8", "replace")
+    except Exception as e:
+        out = getattr(e, "output", b"") or b""
+        return out.decode("utf-8", "replace") if isinstance(out, bytes) else str(e)
+
+
+def diag():
+    """Everything useful for the teacher when the robot program will not start."""
+    return {
+        "hal_users": hal_users(),
+        "freed_before": state["freed"],
+        "services": sh("systemctl list-units --type=service --state=running --no-legend --no-pager | head -40"),
+        "enabled": sh("systemctl list-unit-files --state=enabled --no-legend --no-pager | head -60"),
+        "robot_procs": sh("ps -eo pid,etimes,args | grep -iE 'robot|frc|java|vmx|pigpio' | grep -v grep | head -20"),
+        "pigpio_pid": sh("ls -la /var/run/pigpio.pid 2>&1"),
+        "first_run_lines": sh("grep -n 'run.sh start' -A25 %s | tail -40" % RUN_LOG),
+        "manager_log": tail(os.path.join(LOGS, "manager.log"), 30),
+        "uptime": sh("uptime"),
+        "os": sh("uname -a; head -2 /etc/os-release"),
+    }
 
 
 def tail(path, lines):
@@ -291,6 +387,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if r == "/status":
                 return self._send(200, status())
+            if r == "/diag":
+                return self._send(200, diag())
             if r == "/time":
                 return self._reply(set_clock(float(q.get("epoch", "0"))))
             if r == "/start":
