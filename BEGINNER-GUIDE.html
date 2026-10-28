@@ -91,6 +91,10 @@ input[type=text]{font:inherit;padding:8px;border:1px solid #c9ced6;border-radius
 .trows{list-style:none;padding:0;margin:8px 0}
 .trows li{display:flex;align-items:center;gap:12px;padding:10px 8px;border-bottom:1px solid var(--line);font-weight:700;font-size:18px}
 .trows li .ic{width:30px;text-align:center;font-size:22px}.trows li .nt{font-size:14px;color:var(--muted);font-weight:600}
+.trows li .rec{margin-left:auto;font-size:14px;font-weight:700;color:#0b5e2c;background:#e7f6ec;border-radius:8px;padding:3px 10px;white-space:nowrap}
+.trows li .rec:empty{visibility:hidden}
+.trows li .rec.bad{color:#fff;background:#d92d20}.trows li .rec.bad s{opacity:.8}
+#trows .rt{margin-left:6px !important}
 .trows li.run{background:#e8f0fe}.trows li a{margin-left:auto;font-size:14px}
 #modal .opts{display:flex;flex-direction:column;gap:8px}
 .prog{display:flex;align-items:center;gap:16px;padding:12px 20px;font-size:19px}.prog button{margin-left:auto;padding:6px 12px;font-size:14px}
@@ -200,6 +204,7 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
 
 <section class="view" id="v-test"><div class="card">
   <div class="btns" style="margin-top:0"><button class="go huge" id="bTest" onclick="runTests()">🧪 Test my robot</button></div>
+  <div id="recFix"></div>
   <ul class="trows" id="trows"></ul>
   <details style="margin-top:14px"><summary><b>Manual</b></summary>
   <ul class="checks" id="checks"></ul>
@@ -433,6 +438,7 @@ function go(v){
   document.querySelectorAll(".view").forEach(x => x.classList.toggle("show", x.id === "v-" + v));
   history.replaceState(null, "", "#" + v);
   if(v === "settings") loadWiring();
+  if(v === "test" && typeof recLoad === "function") recLoad();
 }
 document.querySelectorAll('nav a[href="#"]').forEach(a => a.onclick = e => { e.preventDefault(); go(a.dataset.v); });
 
@@ -520,7 +526,7 @@ function checks(s){
   if(!P2.length) ul.innerHTML = '<div class="st ok"><span class="dot"></span>All OK ✓</div>';
 }
 async function fixOldPins(){
-  if(await ask("New standard wiring", "START → 8 · STOP → 9 · RESET → 10\nLift → 12 · Pusher → 13 · Green → 14 · Red → 15\nApply it, then move the plugs.", "Apply")){
+  if(await ask("Standard wiring", "START → 8 · STOP → 9 · RESET → 10\nLift → 12 · Pusher → 13 · Green → 14 · Red → 15\nWheels: FL M0 · FR M1 · RL M2 · RR M3\nApply it, then move the plugs to match.", "Apply")){
     try{ for(const [k, v] of Object.entries(DEFAULTS)) await P("/set?key=" + k + "&value=" + v); oldPins = false; setAt = 0; }catch(e){}
     try{ localStorage.removeItem(DONE_K); doneMap = {}; }catch(e){}
     go("wiring");
@@ -880,7 +886,7 @@ function row(id, icon, note, cls){
   const a = li.querySelector("a"); if(a) a.style.display = (icon === "❌" && GUIDE[id]) ? "" : "none";
 }
 function drawRows(){
-  $("trows").innerHTML = TESTS.map(([id, name]) => '<li id="t-' + id + '"><span class="ic">⚪</span><span>' + name + '</span><span class="nt"></span>' +
+  $("trows").innerHTML = TESTS.map(([id, name]) => '<li id="t-' + id + '"><span class="ic">⚪</span><span>' + name + '</span><span class="nt"></span><span class="rec" id="rec-' + id + '"></span>' +
     '<button class="rt" title="Test again" onclick="runOne(\'' + id + '\')">↻</button>' +
     (GUIDE[id] ? '<a href="#" style="display:none" onclick="go(\'settings\');setTimeout(()=>showGuide(\'' + GUIDE[id] + '\'),1200);return false">how to plug</a>' : "") + "</li>").join("");
 }
@@ -901,7 +907,7 @@ async function runTests(){
     row(id, r[0], r[1]); if(r[0] !== "❌") pass++;
     if(id === "prog" && r[0] === "❌") break;
   }
-  $("bTest").disabled = false;
+  $("bTest").disabled = false; recLoad();
   if(needRestart && await ask("Restart now?", "Needed for the fixes.", "Restart", "Later")){ mgrOK ? mgr("/restart", "Restarting…") : P("/restart").catch(()=>{}); go("connect"); }
 }
 // test one row again (↻ next to each row)
@@ -1014,6 +1020,25 @@ async function tCam(){
   return s.colour === "no camera" ? ["❌", "Plug camera into USB, then Restart"] : ["✅"];
 }
 drawRows();
+
+// recommended connection for each test row; red when the robot is set to something else
+const REC = {stop:["STOP_BUTTON","VMX "], start:["START_BUTTON","VMX "], reset:["RESET_BUTTON","VMX "], green:["RUNNING_LED","VMX "], red:["STOPPED_LED","VMX "],
+  w0:["FRONT_LEFT","Titan M"], w1:["FRONT_RIGHT","Titan M"], w2:["REAR_LEFT","Titan M"], w3:["REAR_RIGHT","Titan M"],
+  lift:["LIFT_SERVO_PIN","VMX ", " → Servo Block 1"], pusher:["SERVO_PIN","VMX ", " → Servo Block 2"], cam:[null, "VMX USB"]};
+async function recLoad(){
+  let v = null;
+  try{ const d = await P("/settings"); v = {}; d.settings.forEach(x => v[x.key] = Math.round(x.value)); }catch(e){}
+  let bad = 0;
+  for(const [id, [key, pre, post]] of Object.entries(REC)){
+    const el = $("rec-" + id); if(!el) continue;
+    if(!key){ el.textContent = pre; el.className = "rec"; continue; }
+    const want = DEFAULTS[key], now = v ? v[key] : want, enc = id[0] === "w" ? " + ENC" : "";
+    if(v && now !== want){ bad++; el.className = "rec bad"; el.innerHTML = "Use " + pre + want + enc + " · robot is on <s>" + pre + now + "</s>"; }
+    else { el.className = "rec"; el.textContent = pre + want + enc + (post || ""); }
+  }
+  $("recFix").innerHTML = bad ? '<div class="prob">⚠️ ' + bad + ' part' + (bad > 1 ? "s are" : " is") + ' set differently from the standard wiring (red).<button class="go" onclick="recApply()">Use standard wiring</button></div>' : "";
+}
+async function recApply(){ await fixOldPins(); setTimeout(recLoad, 1500); }
 
 // ---------------------------------------------------------------- standard wiring tab
 const DONE_K = "studica.wiring.done";
@@ -1148,7 +1173,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 14:34";
+const PAGE_VER = "2026-10-28 14:36";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
