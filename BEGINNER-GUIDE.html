@@ -133,6 +133,9 @@ nav a.small.alert{background:#fff3c4;color:#7a4600}
 nav a.small.here{background:var(--blue);color:#fff}
 .ver{font-size:14px;color:var(--muted)}
 .updbox{border:2px solid var(--line);border-radius:14px;padding:16px;margin:10px 0}
+.usteps{list-style:none;padding:0;margin:6px 0 4px}.usteps li{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:12px;font-weight:700;font-size:17px;color:#777}
+.usteps li .k{width:30px;height:30px;border-radius:50%;background:#e6e9ef;display:grid;place-items:center;flex:none}
+.usteps li.now{background:#fff8e1;color:#14171c}.usteps li.now .k{background:#e0a000;color:#fff}.usteps li.done{color:#0b5e2c}.usteps li.done .k{background:var(--ok);color:#fff}
 .updbox.new{border-color:#e0a000;background:#fff8e1}
 textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #c9ced6;border-radius:10px}
 </style>
@@ -332,6 +335,14 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
 
 <section class="view" id="v-update"><div class="card">
   <h2>🔄 Update</h2>
+  <div class="updbox"><b>What to do</b> <span class="ver" id="updNotes"></span>
+    <ol class="usteps">
+      <li id="us1"><span class="k">1</span>On a Wi-Fi with internet: click <u>⬇ Update now</u></li>
+      <li id="us2"><span class="k">2</span>Connect to the robot Wi-Fi: click <u>⬆ Update robot</u></li>
+      <li id="us3"><span class="k">3</span>Wait for <u>Ready ✓</u> on Connect (1–3 min)</li>
+      <li id="us4"><span class="k">4</span>Run the ❌ tests again · then <u>📨 Send results to teacher</u></li>
+    </ol>
+  </div>
   <div class="updbox" id="updApp">
     <b>Dashboard</b> <span class="ver" id="updCur"></span>
     <div class="btns"><button class="go" id="updCheck" onclick="updCheck(true)">Check for updates</button><button id="updGo" class="go" style="display:none" onclick="updGo()">⬇ Update now</button></div>
@@ -1079,10 +1090,25 @@ function updRobotCheck(m){
   robotVer = m.version || "";
   const mine = L.robotVersion();
   const need = mine && robotVer !== mine;
-  $("updRobot").style.display = need ? "" : "none";
+  $("updRobot").style.display = need ? "" : "none"; updRobotNeed = !!need;
   $("updRobotV").textContent = "robot: " + (robotVer || "unknown") + " · yours: " + mine;
   if(need && !$("navUpd").classList.contains("alert")){ $("navUpd").textContent = "🔄 Update robot"; $("navUpd").classList.add("alert"); }
 }
+
+// ---- "What to do" steps on the Update page
+let updRobotNeed = null;
+function usteps(){
+  const set = (i, c) => { const e = $("us" + i); if(e) e.className = c; };
+  const appNew = !!(updInfo && updInfo.available);
+  set(1, appNew ? "now" : (L ? "done" : "now"));
+  if(!L && $("us1")) $("us1").innerHTML = '<span class="k">1</span>Close this page · open <u>START HERE.html</u> instead';
+  const rob = appNew ? "" : updRobotNeed === true ? "now" : updRobotNeed === false ? "done" : "";
+  set(2, rob);
+  set(3, appNew || updRobotNeed !== false ? "" : ready ? "done" : "now");
+  set(4, !appNew && updRobotNeed === false && ready ? "now" : "");
+  if($("updNotes")) $("updNotes").textContent = updInfo && updInfo.available && updInfo.notes ? "· new: " + updInfo.notes : (L ? "· v " + L.version : "");
+}
+setInterval(usteps, 2000);
 async function updRobot(){
   if(!await ask("Update the robot?", "It compiles and restarts (about 1–3 minutes).", "Update")) return;
   $("updRobotBtn").disabled = true;

@@ -175,6 +175,17 @@ public:
     {
         // ---- physical panel buttons ----
         bool startPressed = hardware->GetStartButton();
+        bool resetPressed = hardware->GetResetButton();
+        // START and RESET seen pressed in the same loop = not a person, it is
+        // electrical noise (e.g. buttons on the HiCurrDIO header while its
+        // direction jumper is still set to OUTPUT). Ignore both.
+        if (startPressed && resetPressed) {
+            if (!bothNoiseLogged) {
+                robotlog::Log("START and RESET read pressed together - ignored (wiring/jumper problem, see Test page)");
+                bothNoiseLogged = true;
+            }
+            startPressed = resetPressed = false;
+        }
         bool stopNow = !hardware->GetStopButton();
         if (stopNow != stopWasPressed) {
             robotlog::Log(stopNow ? "STOP button PRESSED - all motors blocked until released"
@@ -188,8 +199,18 @@ public:
         // Start = held steadily for 10 loops (~0.2 s), and only after it was
         // seen released. A servo pulse or noise on the pin can no longer
         // start the routine.
-        startHeld = startPressed ? startHeld + 1 : 0;
-        if (startHeld == 10 && startReleasedOnce && !server->Busy() && !pinClash) {
+        // Debounce by time, not loop count: the loop runs ~2000 times a second,
+        // so "10 loops" was only 5 ms.
+        double now = frc::Timer::GetFPGATimestamp();
+        if (!startPressed) startSince = -1; else if (startSince < 0) startSince = now;
+        if (!resetPressed) resetSince = -1; else if (resetSince < 0) resetSince = now;
+        bool startFire = startSince >= 0 && now - startSince >= 0.10 && !startDone;
+        bool resetFire = resetSince >= 0 && now - resetSince >= 0.10 && !resetDone;
+        if (startSince < 0) startDone = false;
+        if (resetSince < 0) resetDone = false;
+        if (startFire) startDone = true;
+        if (resetFire) resetDone = true;
+        if (startFire && startReleasedOnce && !server->Busy() && !pinClash) {
             server->estopLatched = false;
             robotlog::Log("start button: running the stored routine");
             RunStoredRoutine();
@@ -198,8 +219,7 @@ public:
         startWasPressed = startPressed;
 
         // RESET button: held ~0.2 s -> stop everything, clear e-stop, zero pose.
-        resetHeld = hardware->GetResetButton() ? resetHeld + 1 : 0;
-        if (resetHeld == 10) {
+        if (resetFire) {
             robotlog::Log("RESET button: stopped, e-stop cleared, position zeroed - ready for START");
             server->ResetFromButton();
             hardware->ResetEncoders();
@@ -304,11 +324,12 @@ private:
 
     bool startWasPressed = true;   // a button already "pressed" at start-up (wrong pin, floating input) must never start a routine
     bool webDriving = false;
-    int  startHeld = 0;
     bool startReleasedOnce = false;
     bool pinClash = false;
     bool stopWasPressed = false, startLogged = false;
-    int  resetHeld = 0;
+    double startSince = -1, resetSince = -1;
+    bool startDone = false, resetDone = false;
+    bool bothNoiseLogged = false;
     double tLed = 0, tOdo = 0, tPub = 0, tRest = 0, tReport = 0;
     int nLoops = 0;
     studica::MockDS ds;
