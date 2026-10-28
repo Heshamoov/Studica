@@ -1095,7 +1095,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 12:21";
+const PAGE_VER = "2026-10-28 12:23";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
@@ -1123,17 +1123,41 @@ async function msgFetch(){
   msgShow();
 }
 function msgDone(id){ const d = jget(MSGD, []); d.push(id); localStorage.setItem(MSGD, JSON.stringify(d)); msgShow(); }
+function goTo(spec){ const [v, el] = String(spec).split("#"); $("dmodal").classList.remove("show"); go(v); if(el) setTimeout(() => { const e = $(el); if(e) e.scrollIntoView({behavior: "smooth", block: "start"}); }, 150); }
+const esc = t => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+function myMsgs(){
+  const done = jget(MSGD, []), me = (team || "").toLowerCase();
+  return jget(MSGK, []).filter(m => m && (m.text || m.title) && !done.includes(m.id) &&
+    (!m.to || m.to === "all" || me && String(m.to).toLowerCase().split(/[ ,]+/).some(t => me === t || me.endsWith("-" + t) || me.endsWith(t))));
+}
+function msgCard(m, withDone){
+  return '<div class="tmsg"><span>' + (m.to && m.to !== "all" ? "📣" : "🆕") + '</span><div class="t">' +
+    (m.title ? "<b>" + esc(m.title) + "</b>\n" : "") + esc(m.text) +
+    (m.steps && m.steps.length ? '<ol style="margin:6px 0 0;padding-left:22px;white-space:normal">' + m.steps.map(x => "<li>" + esc(x) + "</li>").join("") + "</ol>" : "") +
+    (m.guides && m.guides.length ? '<div class="btns" style="margin:8px 0 0">' + m.guides.map(([l, g]) => '<button class="go" onclick="goTo(\'' + String(g).replace(/'/g, "") + '\')">' + esc(l) + "</button>").join("") + "</div>" : "") +
+    '<small>' + (m.to && m.to !== "all" ? "For your team" : "For everyone") + (m.date ? " · " + esc(m.date) : "") + '</small></div>' +
+    (withDone ? '<button onclick="msgDone(\'' + String(m.id).replace(/'/g, "") + '\')">✓ Done</button>' : "") + "</div>";
+}
 function msgShow(){
   const el = $("tmsgs"); if(!el) return;
-  const done = jget(MSGD, []), me = (team || "").toLowerCase();
-  const list = jget(MSGK, []).filter(m => m && m.text && !done.includes(m.id) &&
-    (!m.to || m.to === "all" || me && String(m.to).toLowerCase().split(/[ ,]+/).some(t => me === t || me.endsWith("-" + t) || me.endsWith(t))));
-  let h = list.map(m => '<div class="tmsg"><span>📣</span><div class="t">' + m.text.replace(/</g, "&lt;") + '<small>Teacher · ' + (m.date || "") + '</small></div><button onclick="msgDone(\'' + String(m.id).replace(/'/g, "") + '\')">✓ Done</button></div>').join("");
+  let h = myMsgs().map(m => msgCard(m, true)).join("");
   const lat = latest || jget("studica.latest", null);
-  if(!L) h = '<div class="tmsg warn"><span>⚠️</span><div class="t">This is an old copy. It cannot update.\nClose it and open <u>START HERE.html</u>.' + (lat ? ' (newest: ' + lat.version + ')' : '') + '</div></div>' + h;
+  if(!L) h = '<div class="tmsg warn"><span>⚠️</span><div class="t">This is an old copy. It cannot update.\nClose it and open <u>START HERE.html</u>.' + (lat ? " (newest: " + esc(lat.version) + ")" : "") + "</div></div>" + h;
   el.innerHTML = h;
 }
-msgShow(); msgFetch(); setInterval(msgFetch, 2 * 60 * 1000); setInterval(msgShow, 5000);
+// right after an update: show "what's fixed + what to do" for this team, once per version
+function whatsNew(){
+  if(!L) return;
+  let seen = ""; try{ seen = localStorage.getItem("studica.seenVer") || ""; }catch(e){}
+  if(seen === L.version) return;
+  try{ localStorage.setItem("studica.seenVer", L.version); }catch(e){}
+  if(!seen) return;   // first time ever: nothing "new"
+  const list = myMsgs();
+  $("dT").textContent = "✅ Updated · " + L.version;
+  $("dB").innerHTML = (L.notes ? "<p><b>New:</b> " + esc(L.notes) + "</p>" : "") + (list.length ? list.map(m => msgCard(m, false)).join("") : "<p>Nothing to do. Carry on 👍</p>");
+  $("dmodal").classList.add("show");
+}
+msgShow(); msgFetch().finally(() => whatsNew()); setInterval(msgFetch, 2 * 60 * 1000); setInterval(msgShow, 5000);
 
 // ---- "What to do" steps on the Update page
 let updRobotNeed = null;
