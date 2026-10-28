@@ -1105,16 +1105,29 @@ async function updRobot(){
 const RQ = "studica.reports";
 function repQueue(){ try{ return JSON.parse(localStorage.getItem(RQ) || "[]"); }catch(e){ return []; } }
 function repSave(q){ try{ localStorage.setItem(RQ, JSON.stringify(q.slice(-10))); }catch(e){} }
+// robot snapshot: taken every 30 s while connected, so a report sent later (on school Wi-Fi) still has the robot's log
+const SNAP = "studica.snap";
+let snapBusy = false;
+async function snapTake(){
+  if(snapBusy || !ready) return; snapBusy = true;
+  const o = {at: new Date().toISOString(), robotVersion: robotVer};
+  try{ o.state = await P("/state"); }catch(e){}
+  try{ o.settings = (await P("/settings")).settings.map(x => x.key + "=" + x.value); }catch(e){}
+  try{ o.manager = await M("/status"); }catch(e){}
+  try{ o.log = await M("/log?name=run&lines=120"); }catch(e){}
+  try{ o.buildLog = await M("/log?name=build&lines=40"); }catch(e){}
+  try{ o.diag = await M("/diag"); }catch(e){}
+  if(o.state || o.log){ try{ localStorage.setItem(SNAP, JSON.stringify(o)); }catch(e){} }
+  snapBusy = false; return o;
+}
+setInterval(snapTake, 30000);
 async function repBuild(note){
-  let state = null, log = "", buildLog = "", settings = null, manager = null;
-  try{ state = await P("/state"); }catch(e){}
-  try{ settings = (await P("/settings")).settings.map(x => x.key + "=" + x.value); }catch(e){}
-  try{ manager = await M("/status"); }catch(e){}
-  try{ log = await M("/log?name=run&lines=120"); }catch(e){}
-  try{ buildLog = await M("/log?name=build&lines=40"); }catch(e){}
-  let diag = null; try{ diag = await M("/diag"); }catch(e){}
+  let live = ready ? await snapTake() : null, old = {};
+  try{ old = JSON.parse(localStorage.getItem(SNAP) || "{}") || {}; }catch(e){}
+  const d = live && (live.state || live.log) ? live : old;
   if(!team){ team = prompt("Your team name (as on the robot's Wi-Fi):", "Team1") || "unknown"; try{ localStorage.setItem("studica.team", team); }catch(e){} }
-  return {team, time: new Date().toISOString(), robot: host, version: L ? L.version : "file", robotVersion: robotVer, note, state, settings, manager, log, buildLog, diag};
+  return {team, time: new Date().toISOString(), robot: host, version: L ? L.version : "file", robotVersion: d.robotVersion || robotVer, note: note + (d === old && d.at ? "\n\n_Robot data taken " + d.at + "_" : ""),
+          state: d.state || null, settings: d.settings || null, manager: d.manager || null, log: d.log || "", buildLog: d.buildLog || "", diag: d.diag || null};
 }
 function repText(r){ return "[" + r.team + "] " + r.time + " · dashboard " + r.version + " · robot " + r.robotVersion + "\n\n" + r.note + "\n\nSTATE: " + JSON.stringify(r.state) + "\n\nSETTINGS: " + JSON.stringify(r.settings) + "\n\nLOG:\n" + r.log + "\n\nBUILD:\n" + r.buildLog; }
 async function repSend(){
@@ -1123,11 +1136,12 @@ async function repSend(){
   const r = await repBuild(note); const q = repQueue(); q.push(r); repSave(q); $("repTxt").value = "";
   await repFlush(true);
 }
+let flushing = false;
 async function repFlush(manual, out){
-  const O = $(out || "repRes"); const q = repQueue(); if(!q.length) return;
+  const O = $(out || "repRes"); const q = repQueue(); if(!q.length) return; if(flushing){ if(manual) O.textContent = "Saved · sending…"; return; } flushing = true;
   if(!ucfg.report_url){ try{ ucfg = (await L.check()).config || ucfg; }catch(e){} }
   if(!ucfg.report_url){ try{ ucfg = await (await fetch("https://raw.githubusercontent.com/Heshamoov/Studica/dist/config.json", {cache: "no-store"})).json(); }catch(e){} }
-  if(!ucfg.report_url){ O.textContent = (manual ? "Saved. " : "") + q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again, or use Copy report."; return; }
+  if(!ucfg.report_url){ flushing = false; O.textContent = (manual ? "Saved. " : "") + q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again, or use Copy report."; return; }
   const left = []; let sent = 0, url = "";
   for(const r of q){
     try{
@@ -1135,7 +1149,7 @@ async function repFlush(manual, out){
       const j = await res.json(); if(!j.ok) throw 0; sent++; url = j.url || "";
     }catch(e){ left.push(r); }
   }
-  repSave(left);
+  repSave(left.concat(repQueue().slice(q.length))); flushing = false;
   O.textContent = sent ? "✅ Sent to the teacher" + (left.length ? " · " + left.length + " still waiting" : "") : q.length + " report(s) waiting · no internet here. Connect to the school Wi-Fi and press Send again.";
 }
 async function repCopy(){
@@ -1145,6 +1159,7 @@ async function repCopy(){
 function repBadge(){ if($("navUpd").classList.contains("alert")) return; const n = repQueue().length;
   $("navUpd").textContent = n ? "🔄 " + n + " report" + (n > 1 ? "s" : "") + " waiting" : "🔄 Update"; }
 setInterval(repBadge, 5000);
+setInterval(() => { if(repQueue().length) repFlush(false); }, 30000);
 updShow(); updCheck(false); setInterval(() => updCheck(false), 10 * 60 * 1000);
 // when running from START HERE.html, open the extra pages through it (so they are the updated copies)
 if(L) document.querySelectorAll('a[href^="tools/"],a[href^="docs/"]').forEach(a => { const p = a.getAttribute("href"); a.href = "#"; a.onclick = e => { e.preventDefault(); L.open(p); }; });
