@@ -82,6 +82,12 @@ def main():
     out = os.path.join(DIST, "START HERE.html")
     with open(out, "w", encoding="utf-8") as f:
         f.write(loader)
+    # light START HERE.html for the repo root (GitHub "Download ZIP"): no built-in copy,
+    # it downloads the newest version the first time it opens
+    light = open(os.path.join(ROOT, "build", "loader.html"), encoding="utf-8").read()
+    light = light.replace("/*BUILTIN_JSON*/", '{"version": "", "date": "", "files": {}}').replace("/*RAW_BASE*/", RAW_BASE)
+    with open(os.path.join(DIST, "START-HERE-light.html"), "w", encoding="utf-8") as f:
+        f.write(light)
     with zipfile.ZipFile(os.path.join(DIST, "Studica-START-HERE.zip"), "w", zipfile.ZIP_DEFLATED) as z:
         z.write(out, "START HERE.html")
     print("built", version, "-", len(files) + 1, "files,", os.path.getsize(out) // 1024, "KB installer")

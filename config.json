@@ -1,4 +1,19 @@
 {
-  "report_url": "https://studica-reports.hesham-alatrash.workers.dev/",
-  "_help": "Problem reports -> GitHub Issues. Deploy build/report-worker.js on Cloudflare Workers (free), then paste the worker URL here. Empty = students use 'Copy report'."
+ "report_url": "https://studica-reports.hesham-alatrash.workers.dev/",
+ "_help": "Problem reports -> GitHub Issues. Deploy build/report-worker.js on Cloudflare Workers (free), then paste the worker URL here. Empty = students use 'Copy report'.",
+ "messages": [
+  {
+   "id": "t1-1028a",
+   "to": "Team-1",
+   "date": "28 Oct",
+   "text": "START and RESET press by themselves and stop every command.\n1) 🔄 Update → ⬆ Update robot.\n2) Ask the teacher to remove the VMX HiCurrDIO jumper.\n3) Test Simple tasks again → 📨 Send results."
+  },
+  {
+   "id": "t2-1028a",
+   "to": "Team-2",
+   "date": "28 Oct",
+   "text": "Wheels can't move: the robot can't find the Titan.\nCheck: E-STOP up · POWER on · Titan lights on · CAN cable (yellow/green) VMX → Titan plugged in both ends.\nThen 🔄 Update → ⬆ Update robot, and ask the teacher about the VMX jumper (START/RESET always pressed)."
+  }
+ ],
+ "_help_messages": "Messages shown on the student page. to = all, or the end of the robot Wi-Fi name (Team-1). Change id to show a message again."
 }

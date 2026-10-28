@@ -57,6 +57,8 @@ input[type=text]{font:inherit;padding:8px;border:1px solid #c9ced6;border-radius
 #modal{position:fixed;inset:0;background:rgba(10,20,40,.55);display:none;place-items:center;z-index:50}
 #modal.show{display:grid}
 #modal .card{max-width:440px;width:92%}#modal h3{margin:0 0 6px;font-size:21px}
+.tmsg{display:flex;align-items:flex-start;gap:12px;background:#e8f0ff;border:2px solid #3b6fd8;color:#14171c;border-radius:14px;padding:12px 16px;margin:0 0 12px;font-weight:700;font-size:17px}
+.tmsg.warn{background:#fff3cd;border-color:#e0a000}.tmsg .t{flex:1;white-space:pre-line}.tmsg small{display:block;color:#666;font-weight:600}
 .prob{display:flex;align-items:center;gap:12px;background:var(--errbg);color:#8f1d14;border-radius:12px;padding:10px 14px;margin:8px 0;font-weight:700}
 .prob button{margin-left:auto;padding:8px 16px}
 #guide{margin-top:14px}#guide svg{max-width:100%;height:auto;background:#fff;border-radius:14px;border:1px solid var(--line)}
@@ -161,6 +163,7 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
 </nav>
 
 <main>
+<div id="tmsgs"></div>
 <section class="view" id="v-connect"><div class="card">
   <h2>🔗 Connect</h2>
   <div id="howto">
@@ -227,6 +230,7 @@ textarea{font:inherit;width:100%;min-height:90px;padding:10px;border:1px solid #
     <div class="board">
       <div class="lbl">Side · FlexDIO 0–7</div><div class="conns" id="pSide"></div>
       <div class="lbl" style="margin-top:16px">Bottom edge · wire letters match the row printed on the board: – top · + middle · S bottom</div>
+      <div class="lbl" style="color:#ffe08a">⚠️ Buttons on 12–21 work only with the VMX <b>HiCurrDIO jumper removed</b> (teacher).</div>
       <div class="edge" id="pEdge"></div>
     </div>
     <div class="titan"><div class="lbl">Titan · motors</div><div class="pins" id="pTitan"></div></div>
@@ -483,7 +487,7 @@ async function poll(){
 }
 
 // Detect problems; fix by itself where safe, otherwise one plain button.
-let stopSince = 0, startFlips = [], lastStart = null, autoEn = 0;
+let bothSince = 0, titanAt = 0, titanBad = false, stopSince = 0, startFlips = [], lastStart = null, autoEn = 0;
 function checks(s){
   const P2 = [];   // [text, buttonLabel, action]
   const now = Date.now();
@@ -497,6 +501,11 @@ function checks(s){
   if(lastStart !== null && lastStart !== !!s.start_btn) startFlips.push(now);
   lastStart = !!s.start_btn; startFlips = startFlips.filter(t => now - t < 6000);
   if(startFlips.length > 6) P2.push(["START button acts by itself", "Fix", fixStart]);
+  // START and RESET (pins 12-21) always read pressed -> HiCurrDIO jumper still fitted
+  if(s.start_btn && s.reset_btn){ bothSince = bothSince || now; if(now - bothSince > 5000) P2.push(["START / RESET buttons can't be read. Call your teacher (VMX jumper)."]); }
+  else bothSince = 0;
+  if(now - titanAt > 15000){ titanAt = now; P("/titan").then(t => { titanBad = !!t && (/No Hardware/i.test(t.hardware || "") || /0\.0\.0/.test(t.firmware || "")); }).catch(()=>{}); }
+  if(titanBad) P2.push(["Wheels can't move: motor controller (Titan) not found. Check: E-STOP up · POWER on · Titan lights on · CAN cable (yellow/green) VMX → Titan.", "Wiring", () => go("wiring")]);
   if(s.servo_ok && !s.servo_ok[0]) P2.push(["Lift motor pin not working", "Fix", () => fixPin("lift")]);
   if(s.servo_ok && !s.servo_ok[1]) P2.push(["Pusher pin not working", "Fix", () => fixPin("pusher")]);
   if(s.colour === "no camera") P2.push(["Camera not found. Plug it into a USB port.", "Restart", () => mgr("/restart", "Restarting…")]);
@@ -1086,7 +1095,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 12:10";
+const PAGE_VER = "2026-10-28 12:21";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
@@ -1101,6 +1110,30 @@ function updRobotCheck(m){
   $("updRobotV").textContent = "robot: " + (robotVer || "unknown") + " · yours: " + mine;
   if(need && !$("navUpd").classList.contains("alert")){ $("navUpd").textContent = "🔄 Update robot"; $("navUpd").classList.add("alert"); }
 }
+
+
+// ---- messages from the teacher (config.json "messages" on GitHub) + "old copy" warning
+const MSGK = "studica.msgs", MSGD = "studica.msgs.done";
+const jget = (k, d) => { try{ return JSON.parse(localStorage.getItem(k) || "") || d; }catch(e){ return d; } };
+let latest = null;
+async function msgFetch(){
+  const base = "https://raw.githubusercontent.com/Heshamoov/Studica/dist/";
+  try{ const c = await (await fetch(base + "config.json?t=" + Date.now(), {cache: "no-store"})).json(); if(c){ ucfg = Object.assign({}, ucfg, c); localStorage.setItem(MSGK, JSON.stringify(c.messages || [])); } }catch(e){}
+  try{ latest = await (await fetch(base + "version.json?t=" + Date.now(), {cache: "no-store"})).json(); localStorage.setItem("studica.latest", JSON.stringify(latest)); }catch(e){}
+  msgShow();
+}
+function msgDone(id){ const d = jget(MSGD, []); d.push(id); localStorage.setItem(MSGD, JSON.stringify(d)); msgShow(); }
+function msgShow(){
+  const el = $("tmsgs"); if(!el) return;
+  const done = jget(MSGD, []), me = (team || "").toLowerCase();
+  const list = jget(MSGK, []).filter(m => m && m.text && !done.includes(m.id) &&
+    (!m.to || m.to === "all" || me && String(m.to).toLowerCase().split(/[ ,]+/).some(t => me === t || me.endsWith("-" + t) || me.endsWith(t))));
+  let h = list.map(m => '<div class="tmsg"><span>📣</span><div class="t">' + m.text.replace(/</g, "&lt;") + '<small>Teacher · ' + (m.date || "") + '</small></div><button onclick="msgDone(\'' + String(m.id).replace(/'/g, "") + '\')">✓ Done</button></div>').join("");
+  const lat = latest || jget("studica.latest", null);
+  if(!L) h = '<div class="tmsg warn"><span>⚠️</span><div class="t">This is an old copy. It cannot update.\nClose it and open <u>START HERE.html</u>.' + (lat ? ' (newest: ' + lat.version + ')' : '') + '</div></div>' + h;
+  el.innerHTML = h;
+}
+msgShow(); msgFetch(); setInterval(msgFetch, 2 * 60 * 1000); setInterval(msgShow, 5000);
 
 // ---- "What to do" steps on the Update page
 let updRobotNeed = null;

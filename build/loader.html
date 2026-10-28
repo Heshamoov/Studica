@@ -109,6 +109,14 @@
       open(path){ location.href = location.pathname + "?open=" + encodeURIComponent(path); },
     };
     const q = new URLSearchParams(location.search).get("open");
+    if(!active.files["BEGINNER-GUIDE.html"]){
+      // light copy (from the GitHub download): fetch the newest version once, then it works offline
+      const boot = document.getElementById("boot");
+      boot.textContent = "Getting the newest version… (needs internet the first time)";
+      try{ await window.loader.update((i, n) => { boot.textContent = "Getting the newest version… " + i + " / " + n; }); location.reload(); }
+      catch(e){ boot.innerHTML = "No internet. Connect to a Wi-Fi with internet and reload this page.<br><br><a href=\"BEGINNER-GUIDE.html\">Open the offline copy</a>"; }
+      return;
+    }
     mount(active.files, q && active.files[q] ? q : "BEGINNER-GUIDE.html");
   })();
 })();
