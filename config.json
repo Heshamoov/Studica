@@ -3,17 +3,16 @@
  "_help": "Problem reports -> GitHub Issues. Deploy build/report-worker.js on Cloudflare Workers (free), then paste the worker URL here. Empty = students use 'Copy report'.",
  "messages": [
   {
-   "id": "all-1028-wiring",
+   "id": "all-1028-wiring2",
    "to": "all",
-   "date": "28 Oct",
-   "title": "⚠️ New wiring for the buttons (all teams)",
-   "text": "Buttons on pins 12–14 can't be read by the VMX. That is why STOP looked pressed and nothing moved.",
+   "date": "28 Oct · 15:10",
+   "title": "Do these 3 things (all teams)",
+   "text": "Your robot still has the OLD program and the OLD wiring. That is why STOP looks pressed and nothing moves.",
    "steps": [
-    "🔄 Update → ⬆ Update robot (on the robot Wi-Fi)",
-    "Connect → \"Buttons are on pins 12–21\" → Show me → Apply",
-    "Move the plugs on the VMX: START 8 · STOP 9 · RESET 10 · Lift servo 12 · Pusher 13 · Green 14 · Red 15",
-    "Restart → 🧪 Test my robot",
-    "Simple tasks → mark ✅ / ❌ → 📨 Send results"
+    "Connect to the robot Wi-Fi → the page asks \"Update the robot\" → click Update (2 min)",
+    "Then it asks \"Standard wiring\" → click Apply",
+    "Move the plugs on the VMX: START 8 · STOP 9 · RESET 10 · Lift 12 · Pusher 13 · Green 14 · Red 15",
+    "🧪 Test → every row should be green → Simple tasks → 📨 Send results (press it ONCE)"
    ],
    "guides": [
     [
@@ -31,6 +30,19 @@
    ]
   },
   {
+   "id": "t1-1028c",
+   "to": "Team-1",
+   "date": "28 Oct · 15:10",
+   "title": "Robot drives by itself in Teleop",
+   "text": "Your START and RESET buttons \"press themselves\" every 2–3 seconds, and START runs a full routine. That is the driving you saw.\nThe 3 steps above fix it. Until then: don't use Teleop.",
+   "guides": [
+    [
+     "🔄 Update",
+     "update"
+    ]
+   ]
+  },
+  {
    "id": "t2-1028c",
    "to": "Team-2",
    "date": "28 Oct",
@@ -39,7 +51,7 @@
    "steps": [
     "E-STOP up, POWER on",
     "Titan lights on (3.3V / 5V next to 12V IN)",
-    "CAN cable (yellow / green) plugged into VMX and Titan"
+    "CAN cable: yellow → H, green → L, at the Titan AND at the VMX"
    ],
    "guides": [
     [
@@ -53,40 +65,32 @@
    ]
   },
   {
-   "id": "t4-1028a",
-   "to": "team-4",
-   "date": "28 Oct",
-   "title": "Your wheel settings are mixed up",
-   "text": "Three wheels are set to the same Titan port (M0). \"Apply\" in the message above fixes it (M0 FL · M1 FR · M2 RL · M3 RR).",
+   "id": "t3-1028b",
+   "to": "team-3",
+   "date": "28 Oct · 15:10",
+   "title": "Your wheels are fine ✅ — STOP is blocking them",
+   "text": "All 4 wheels turned in the test. Forward / turn / lift fail only because STOP is still on the old pin 13.\nDo the 3 steps above. Also: Rear L and Rear R cables are swapped on the Titan — after \"Apply\", plug Rear L into M2 and Rear R into M3.",
    "guides": [
-    [
-     "🔌 Wiring",
-     "wiring"
-    ],
     [
      "🧪 Test",
      "test"
+    ],
+    [
+     "⚙️ Motors wiring",
+     "wiring#wMot"
     ]
    ]
   },
   {
-   "id": "t3-1028a",
-   "to": "team-3",
+   "id": "t4-1028a",
+   "to": "team-4",
    "date": "28 Oct",
-   "title": "3 wheels don't turn",
-   "text": "The Titan works (Rear L turned), so the problem is the other motors' power.",
-   "steps": [
-    "Battery charged",
-    "On the Titan: red/black motor plugs pushed fully into M0, M1, M3",
-    "Yellow 20A fuses for M0, M1, M3 in place",
-    "Rear L: plug its encoder cable (4 colours) into the Titan, same number as the motor",
-    "Do the new wiring (message above) for lights, lift and buttons",
-    "🧪 Test my robot again → 📨 Send results"
-   ],
+   "title": "Your wheel settings are mixed up",
+   "text": "Three wheels are set to the same Titan port (M0). \"Apply\" fixes it (M0 FL · M1 FR · M2 RL · M3 RR).",
    "guides": [
     [
-     "⚙️ Motors wiring",
-     "wiring#wMot"
+     "🔌 Wiring",
+     "wiring"
     ],
     [
      "🧪 Test",

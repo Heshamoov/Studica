@@ -512,6 +512,7 @@ function checks(s){
   if(now - setAt > 20000){ setAt = now; P("/settings").then(r => { const v = {}; (r.settings || []).forEach(x => v[x.key] = +x.value);
     oldPins = [v.START_BUTTON, v.STOP_BUTTON, v.RESET_BUTTON].some(p => p >= 12); }).catch(()=>{}); }
   if(oldPins) P2.push(["Buttons are on pins 12–21, where they can't work. Move them to the new standard wiring.", "Show me", fixOldPins]);
+  if(oldPins && !auto.pinAsk && updRobotNeed !== true && !$("modal").classList.contains("show")){ auto.pinAsk = true; fixOldPins(); }
   if(now - titanAt > 15000){ titanAt = now; P("/titan").then(t => { titanBad = !!t && (/No Hardware/i.test(t.hardware || "") || /0\.0\.0/.test(t.firmware || "")); }).catch(()=>{}); }
   if(titanBad) P2.push(["Wheels can't move: motor controller (Titan) not found. Check: E-STOP up · POWER on · Titan lights on · CAN cable (yellow/green) VMX → Titan.", "Wiring", () => go("wiring")]);
   if(s.servo_ok && !s.servo_ok[0]) P2.push(["Lift motor pin not working", "Fix", () => fixPin("lift")]);
@@ -1173,7 +1174,7 @@ async function updGo(){
   }catch(e){ $("updRes").textContent = "❌ Update failed. Try again."; $("updGo").disabled = false; }
 }
 let robotVer = "";
-const PAGE_VER = "2026-10-28 14:36";
+const PAGE_VER = "2026-10-28 15:07";
 function verTag(){
   const pv = L ? L.version : PAGE_VER, rv = robotVer || (mgrOK ? "old" : "-");
   $("verTag").innerHTML = "Page <b>" + pv + "</b>" + (L ? "" : ' <span class="old">· open START HERE</span>') + "<br>Robot <b" + (rv === "old" || rv === "dev" ? ' class="old"' : "") + ">" + rv + "</b>";
@@ -1187,6 +1188,8 @@ function updRobotCheck(m){
   $("updRobot").style.display = need ? "" : "none"; updRobotNeed = !!need;
   $("updRobotV").textContent = "robot: " + (robotVer || "unknown") + " · yours: " + mine;
   if(need && !$("navUpd").classList.contains("alert")){ $("navUpd").textContent = "🔄 Update robot"; $("navUpd").classList.add("alert"); }
+  if(need && ready && !auto.robotAsk && !$("modal").classList.contains("show")){ auto.robotAsk = true;
+    ask("Update the robot", "The robot has an old program. Update it now? About 2 minutes. Keep the robot on.", "Update", "Later").then(y => { if(y) updRobot(true); }); }
 }
 
 
@@ -1251,8 +1254,8 @@ function usteps(){
   if($("updNotes")) $("updNotes").textContent = updInfo && updInfo.available && updInfo.notes ? "· new: " + updInfo.notes : (L ? "· v " + L.version : "");
 }
 setInterval(usteps, 2000);
-async function updRobot(){
-  if(!await ask("Update the robot?", "It compiles and restarts (about 1–3 minutes).", "Update")) return;
+async function updRobot(sure){
+  if(!sure && !await ask("Update the robot?", "It compiles and restarts (about 1–3 minutes).", "Update")) return;
   $("updRobotBtn").disabled = true;
   try{
     await M("/time?epoch=" + Date.now()); await M("/upload_begin");
@@ -1300,6 +1303,7 @@ async function repBuild(note){
 function repText(r){ return "[" + r.team + "] " + r.time + " · dashboard " + r.version + " · robot " + r.robotVersion + "\n\n" + r.note + "\n\nSTATE: " + JSON.stringify(r.state) + "\n\nSETTINGS: " + JSON.stringify(r.settings) + "\n\nLOG:\n" + r.log + "\n\nBUILD:\n" + r.buildLog; }
 async function repSend(){
   const note = $("repTxt").value.trim(); if(!note){ $("repRes").textContent = "Write what happened first"; return; }
+  if(repQueue().some(x => x.note && x.note.split("\n\n_Robot data")[0] === note)){ $("repRes").textContent = "Already saved"; repFlush(true); return; }
   $("repRes").textContent = "Collecting the robot's log…";
   const r = await repBuild(note); const q = repQueue(); q.push(r); repSave(q); $("repTxt").value = "";
   await repFlush(true);
@@ -1449,6 +1453,7 @@ function resRobot(s){
 function resFail(msg){ if(!resPend) return; const {m, k} = resPend; resPend = null; const r = resGet(m); if(!r[k]) return; r[k].robot = "fail"; r[k].msg = msg; resPut(m, r); resDraw(m); }
 document.addEventListener("click", e => { const b = e.target.closest("[data-r]"); if(b){ const [m, k] = b.dataset.r.split("."); resTrack(m, k); } }, true);
 document.addEventListener("pointerdown", e => { if(e.target.closest("#v-m2 .pad")){ const r = resGet("m2"); r.drive = r.drive || {}; r.drive.n = (r.drive.n || 0) + 1; resPut("m2", r); } }, true);
+let resBusy = false;
 async function resSend(m){
   const r = resGet(m), name = {m1:"Mission 1", m2:"Mission 2", m3:"Mission 3"}[m];
   const rows = RES[m].map(([k, t]) => { const e = r[k] || {}; return "| " + t + " | " + (e.n || 0) + " | " + (e.robot === "ok" ? "✅" : e.robot === "fail" ? "❌" : "–") + " | " + (e.you === "ok" ? "✅" : e.you === "bad" ? "❌" : "–") + " | " + String(e.msg || "").replace(/\|/g, "/").slice(0, 80) + " |"; });
@@ -1456,8 +1461,10 @@ async function resSend(m){
   const ok = RES[m].filter(([k]) => (r[k] || {}).you === "ok").length;
   const note = name + " results · " + ok + " ✅ · " + bad + " ❌\n\n| Test | Tries | Robot | Student | Robot message |\n|---|---|---|---|---|\n" + rows.join("\n") +
     "\n\n**Student notes:** " + ($("res" + m + "Txt").value.trim() || "(none)");
+  if(resBusy) return; resBusy = true;
+  if(repQueue().some(x => x.note && x.note.split("\n\n_Robot data")[0] === note)){ resBusy = false; $("res" + m + "Out").textContent = "Already saved · it will be sent when there is internet"; repFlush(true, "res" + m + "Out"); return; }
   $("res" + m + "Out").textContent = "Collecting the robot's log…";
-  const rep = await repBuild(note); rep.results = {mission: m, r}; const q = repQueue(); q.push(rep); repSave(q);
+  const rep = await repBuild(note); resBusy = false; rep.results = {mission: m, r}; const q = repQueue(); q.push(rep); repSave(q);
   await repFlush(true, "res" + m + "Out");
 }
 ["m1","m2","m3"].forEach(resDraw);
